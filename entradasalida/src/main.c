@@ -42,8 +42,4 @@ void cargar_config_struct_IO(t_config* archivo_config){
     config.path_base_dialfs = config_get_string_value(archivo_config, "PATH_BASE_DIALFS");
     config.block_size = config_get_string_value(archivo_config, "BLOCK_SIZE");
     config.block_count = config_get_string_value(archivo_config, "BLOCK_COUNT");
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> dad80fd4240e0a605870273fd7731968d718e3d5
