@@ -29,7 +29,7 @@ int crear_conexion(char* ip, char* puerto){
 void enviar_conexion(char* mensaje, int socket_cliente)
 {
 	t_paquete* paquete = malloc(sizeof(t_paquete));
-
+ 
 	paquete->codigo_operacion = CONEXION;
 	paquete->buffer = malloc(sizeof(t_buffer));
 	paquete->buffer->size = strlen(mensaje) + 1;

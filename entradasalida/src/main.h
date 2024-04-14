@@ -1,6 +1,6 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
-
+#include <utils/config.h>
 
 typedef struct
 {
@@ -13,8 +13,8 @@ typedef struct
     char* path_base_dialfs;
     char* block_size;
     char* block_count
-} config_struct_IO;
+} config_struct;
 
-extern config_struct_IO config;
+extern config_struct config;
 
 void cargar_config_struct_IO(t_config*);

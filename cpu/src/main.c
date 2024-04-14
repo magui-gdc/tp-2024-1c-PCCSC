@@ -1,6 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
+#include "main.h"
+
+config_struct config;
 
 int main(int argc, char* argv[]) {
     
@@ -19,7 +22,7 @@ int main(int argc, char* argv[]) {
 
     //Limpieza
     log_destroy(logger);
-	config_destroy(config);
+	config_destroy(archivo_config);
     liberar_conexion(conexion_memoria);
 
     return 0;

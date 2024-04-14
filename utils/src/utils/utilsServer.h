@@ -9,15 +9,9 @@
 #include <commons/log.h>
 #include <commons/collections/list.h>
 #include <string.h>
-#include "config.h"
+#include "enums.h"
 
 extern t_log* logger;
-
-typedef enum
-{
-	CONEXION
-}op_code;
-
 
 // CONEXION CLIENTE - SERVIDOR
 void* recibir_buffer(int*, int);

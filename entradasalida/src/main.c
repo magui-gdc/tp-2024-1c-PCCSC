@@ -3,6 +3,8 @@
 #include <utils/hello.h>
 #include "main.h"
 
+config_struct config;
+
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
@@ -24,7 +26,7 @@ int main(int argc, char* argv[]) {
     
 
     log_destroy(logger);
-	config_destroy(config);
+	config_destroy(archivo_config);
 	liberar_conexion(conexion_kernel);
     liberar_conexion(conexion_memoria);
 

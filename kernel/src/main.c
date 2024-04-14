@@ -3,10 +3,12 @@
 #include <utils/hello.h>
 #include "main.h"
 
+config_struct config;
+
 int main(int argc, char* argv[]) {
 
     t_config* archivo_config = iniciar_config("kernel.config");
-    cargar_config_struct_kernel(archivo_config);
+    cargar_config_struct_KERNEL(archivo_config);
     logger = log_create("log.log", "Servidor", 1, LOG_LEVEL_DEBUG);
     
     decir_hola("Kernel");

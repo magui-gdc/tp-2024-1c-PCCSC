@@ -3,6 +3,8 @@
 #include <utils/hello.h>
 #include "main.h"
 
+config_struct config;
+
 int main(int argc, char* argv[]) {
 
     t_config* archivo_config = iniciar_config("memoria.config");

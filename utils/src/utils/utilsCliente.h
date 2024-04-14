@@ -8,12 +8,8 @@
 #include<sys/socket.h>
 #include<netdb.h>
 #include <string.h>
-#include "config.h"
+#include "enums.h"
 
-typedef enum
-{
-	CONEXION
-}op_code;
 
 typedef struct
 {
