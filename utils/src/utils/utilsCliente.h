@@ -4,11 +4,11 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include<commons/log.h>
-#include<commons/config.h>
 #include<unistd.h>
 #include<sys/socket.h>
 #include<netdb.h>
 #include <string.h>
+#include "config.h"
 
 typedef enum
 {
@@ -27,9 +27,6 @@ typedef struct
 	t_buffer* buffer;
 } t_paquete;
 
-
-// CONFIGURACION
-t_config* iniciar_config_cliente(char*);
 
 // SERIALIZACION
 void* serializar_paquete(t_paquete*, int);

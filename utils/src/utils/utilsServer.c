@@ -2,22 +2,6 @@
 
 t_log* logger;
 
-// CONFIGURACION
-t_config* iniciar_config(char* nombre_archivo_configuracion, char** puerto)
-{
-	t_config* nuevo_config = config_create(nombre_archivo_configuracion);
-	if(nuevo_config == NULL){
-		printf("No se pudo obtener el archivo de configuracion %s\n", nombre_archivo_configuracion);
-		perror("Error");
-		exit(EXIT_FAILURE);
-	}
-
-	// toma puerto del servidor actual
-	if(config_has_property(nuevo_config, "PUERTO_ESCUCHA"))
-		*puerto = config_get_string_value(nuevo_config, "PUERTO_ESCUCHA");
-	return nuevo_config;
-}
-
 // CONEXION CLIENTE - SERVIDOR
 //recibe PUERTO, ya que no todos los servidores pueden estar en el mismo puerto
 int iniciar_servidor(char* PUERTO){
