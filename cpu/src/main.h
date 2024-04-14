@@ -13,12 +13,12 @@ ALGORITMO_TLB=FIFO
 
 typedef struct
 {
-    char* ip_memoria,
-    char* puerto_memoria,
-    char* puerto_escucha_dispatch, 
-    char* puerto_escucha_interrupt, 
-    char* cantidad_entradas_tlb,
-    char* algoritmo_tlb,
+    char* ip_memoria;
+    char* puerto_memoria;
+    char* puerto_escucha_dispatch; 
+    char* puerto_escucha_interrupt; 
+    char* cantidad_entradas_tlb;
+    char* algoritmo_tlb
 } config_struct;
 
 extern config_struct config;

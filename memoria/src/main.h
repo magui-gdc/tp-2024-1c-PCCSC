@@ -10,10 +10,10 @@ RETARDO_RESPUESTA=1000
 */
 
 typedef struct {
-    char* puerto_escucha,
-    char* tam_memoria,
-    char* tam_pagina,
-    char* path_instrucciones,
+    char* puerto_escucha;
+    char* tam_memoria;
+    char* tam_pagina;
+    char* path_instrucciones;
     char* retardo_respuesta
 } config_struct;
 
