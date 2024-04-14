@@ -1,5 +1,18 @@
 #include "utilsCliente.h"
 
+// CONFIGURACION
+t_config* iniciar_config_cliente(char* nombre_archivo_configuracion){
+	t_config* nuevo_config = config_create(nombre_archivo_configuracion);
+	if(nuevo_config == NULL){
+		printf("No se pudo obtener el archivo de configuracion %s\n", nombre_archivo_configuracion);
+		perror("Error");
+		exit(EXIT_FAILURE);
+	}
+
+	return nuevo_config;
+}
+
+// CONEXION CLIENTE - SERVIDOR
 int crear_conexion(char* ip, char* puerto){
     struct addrinfo hints;
     struct addrinfo *server_info;
@@ -23,3 +36,54 @@ int crear_conexion(char* ip, char* puerto){
 
     return socket_cliente;
 }
+
+
+void enviar_conexion(char* mensaje, int socket_cliente)
+{
+	t_paquete* paquete = malloc(sizeof(t_paquete));
+
+	paquete->codigo_operacion = CONEXION;
+	paquete->buffer = malloc(sizeof(t_buffer));
+	paquete->buffer->size = strlen(mensaje) + 1;
+	paquete->buffer->stream = malloc(paquete->buffer->size);
+	memcpy(paquete->buffer->stream, mensaje, paquete->buffer->size);
+
+	int bytes = paquete->buffer->size + 2*sizeof(int);
+
+	void* a_enviar = serializar_paquete(paquete, bytes);
+
+	send(socket_cliente, a_enviar, bytes, 0);
+
+	free(a_enviar);
+	eliminar_paquete(paquete);
+}
+
+void eliminar_paquete(t_paquete* paquete)
+{
+	free(paquete->buffer->stream);
+	free(paquete->buffer);
+	free(paquete);
+}
+
+void liberar_conexion(int socket_cliente)
+{
+	close(socket_cliente);
+}
+
+// SERIALIZACION
+void* serializar_paquete(t_paquete* paquete, int bytes)
+{
+	void * magic = malloc(bytes);
+	int desplazamiento = 0;
+
+	memcpy(magic + desplazamiento, &(paquete->codigo_operacion), sizeof(int));
+	desplazamiento+= sizeof(int);
+	memcpy(magic + desplazamiento, &(paquete->buffer->size), sizeof(int));
+	desplazamiento+= sizeof(int);
+	memcpy(magic + desplazamiento, paquete->buffer->stream, paquete->buffer->size);
+	desplazamiento+= paquete->buffer->size;
+
+	return magic;
+}
+
+
