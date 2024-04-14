@@ -33,3 +33,4 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.cantidad_entradas_tlb = config_get_string_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
+

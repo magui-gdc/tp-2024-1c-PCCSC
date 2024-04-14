@@ -20,4 +20,3 @@ typedef struct
 extern config_struct config;
 
 void cargar_config_struct_KERNEL(t_config*);
-

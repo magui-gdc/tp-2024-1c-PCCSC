@@ -11,8 +11,11 @@ CANTIDAD_ENTRADAS_TLB=32
 ALGORITMO_TLB=FIFO
 */
 
+<<<<<<< HEAD
 
 
+=======
+>>>>>>> dad80fd4240e0a605870273fd7731968d718e3d5
 typedef struct
 {
     char* ip_memoria,

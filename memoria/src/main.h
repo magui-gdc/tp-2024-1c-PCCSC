@@ -20,4 +20,7 @@ typedef struct {
 extern config_struct config;
 
 void cargar_config_struct_MEMORIA(t_config*);
+<<<<<<< HEAD
 
+=======
+>>>>>>> dad80fd4240e0a605870273fd7731968d718e3d5
