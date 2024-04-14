@@ -1,11 +1,7 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
 
-<<<<<<< HEAD
-extern config_struct_IO config;
 
-=======
->>>>>>> dad80fd4240e0a605870273fd7731968d718e3d5
 typedef struct
 {
     char* tipo_interfaz,
@@ -19,9 +15,6 @@ typedef struct
     char* block_count,
 } config_struct_IO;
 
-<<<<<<< HEAD
-=======
 extern config_struct_IO config;
 
->>>>>>> dad80fd4240e0a605870273fd7731968d718e3d5
 void cargar_config_struct_IO(t_config*);
