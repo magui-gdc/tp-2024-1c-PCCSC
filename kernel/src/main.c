@@ -16,13 +16,19 @@ int main(int argc, char* argv[]) {
 
     // CONEXION CLIENTE - SERVIDORES
     // a cpu
-    /*conexion_cpu_dispatch = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
-    enviar_conexion("Kernel a INTERRUPT", conexion_cpu_dispatch);
+    conexion_cpu_dispatch = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
+    log_info(logger, "se conecta a CPU puerto DISPATCH");
+    enviar_conexion("Kernel a DISPATCH", conexion_cpu_dispatch);
+	liberar_conexion(conexion_cpu_dispatch); 
 
+    sleep(1); // para esperar que levante el servidor CPU INTERRUPT(esto ta maal porque debería estar en un hilo cada espera de servidores)
     conexion_cpu_interrupt = crear_conexion(config.ip_cpu, config.puerto_cpu_interrupt);
+    log_info(logger, "se conecta a CPU puerto INTERRUPT");
     enviar_conexion("Kernel a INTERRUPT", conexion_cpu_interrupt);
-    */
+    liberar_conexion(conexion_cpu_interrupt);
+    
     // a memoria
+    log_info(logger, "se conecta a MEMORIA puerto INTERRUPT");
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
     enviar_conexion("Kernel", conexion_memoria);
     
@@ -51,8 +57,6 @@ int main(int argc, char* argv[]) {
 
     log_destroy(logger);
 	config_destroy(archivo_config);
-	liberar_conexion(conexion_cpu_dispatch);
-    liberar_conexion(conexion_cpu_interrupt);
     liberar_conexion(conexion_memoria);
     
     
