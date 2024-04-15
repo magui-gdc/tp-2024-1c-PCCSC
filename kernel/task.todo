@@ -1,0 +1,11 @@
+☐ KERNEL → CPU (bian)
+☐ KERNEL → MEMORIA (tinint socket_servidor = iniciar_servidor(config.puerto_escucha);
+log_info(logger, config.puerto_escucha);
+log_info(logger, "Server iniciado bip bop bop bip");)
+☐ CPU → MEMORIA (magui)
+☐ IO → KERNEL
+☐ IO → MEMORIA 
+
+☐ poner los err en las conexiones
+
+

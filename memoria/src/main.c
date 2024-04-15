@@ -13,9 +13,11 @@ int main(int argc, char* argv[]) {
     
     decir_hola("Memoria");
 
+    //iniciar servidor memoria
+
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
     log_info(logger, config.puerto_escucha);
-    log_info(logger, "Server iniciado bip bop bop bip");
+    log_info(logger, "Server MEMORIA iniciado");
 
     int cliente;  
     while((cliente = esperar_cliente(socket_servidor)) != -1){

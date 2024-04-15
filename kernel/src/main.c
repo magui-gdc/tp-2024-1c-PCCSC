@@ -7,15 +7,30 @@ config_struct config;
 
 int main(int argc, char* argv[]) {
 
+    int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
     t_config* archivo_config = iniciar_config("kernel.config");
     cargar_config_struct_KERNEL(archivo_config);
     logger = log_create("log.log", "Servidor", 1, LOG_LEVEL_DEBUG);
     
     decir_hola("Kernel");
 
+    // CONEXION CLIENTE - SERVIDORES
+    // a cpu
+    /*conexion_cpu_dispatch = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
+    enviar_conexion("Kernel a INTERRUPT", conexion_cpu_dispatch);
+
+    conexion_cpu_interrupt = crear_conexion(config.ip_cpu, config.puerto_cpu_interrupt);
+    enviar_conexion("Kernel a INTERRUPT", conexion_cpu_interrupt);
+    */
+    // a memoria
+    conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
+    enviar_conexion("Kernel", conexion_memoria);
+    
+
+    // CONEXION SERVIDOR - CLIENTES
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
     log_info(logger, config.puerto_escucha);
-    log_info(logger, "Server iniciado bip bop bop bip");
+    log_info(logger, "Server KERNEL iniciado");
 
     int cliente;  
     while((cliente = esperar_cliente(socket_servidor)) != -1){
@@ -33,6 +48,14 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
+
+    log_destroy(logger);
+	config_destroy(archivo_config);
+	liberar_conexion(conexion_cpu_dispatch);
+    liberar_conexion(conexion_cpu_interrupt);
+    liberar_conexion(conexion_memoria);
+    
+    
     return EXIT_SUCCESS;
 }
 
