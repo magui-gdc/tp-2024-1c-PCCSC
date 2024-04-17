@@ -5,7 +5,7 @@ t_log* logger;
 // CONEXION CLIENTE - SERVIDOR
 //recibe PUERTO, ya que no todos los servidores pueden estar en el mismo puerto
 int iniciar_servidor(char* PUERTO){
-
+ 
 	int opt = 1;
 
   	int socket_servidor;
@@ -74,4 +74,38 @@ void recibir_conexion(int socket_cliente){
 	char* buffer = recibir_buffer(&size, socket_cliente);
 	log_info(logger, "Se conecto %s", buffer);
 	free(buffer);
+}
+
+void* servidor_escucha(void* conexion){
+	int fd_escucha = *(int*) conexion; // el contenido de la conexion
+	while(1){
+		int *fd_conexion_ptr = malloc(sizeof(int)); // malloc para que por cada cliente aceptado se lo atienda por separado
+		*fd_conexion_ptr = esperar_cliente(fd_escucha);
+		// una vez aceptado, se crea el hilo para manejar la solicitud:
+		pthread_t thread;
+		pthread_create(&thread, NULL, (void*) atender_cliente, fd_conexion_ptr);
+		pthread_detach(thread); // así continúa sin esperar a que finalice el hilo
+	}
+	return NULL;
+}
+
+void* atender_cliente(void* cliente){
+	int cliente_recibido = *(int*) cliente;
+	while(1){
+		int cod_op = recibir_operacion(cliente_recibido);
+		switch (cod_op)
+		{
+		case CONEXION:
+			recibir_conexion(cliente_recibido);
+			break;
+		case -1:
+			log_error(logger, "Cliente desconectado.");
+			close(cliente_recibido); // cierro el socket accept del cliente
+			free(cliente); // libero el malloc reservado para el cliente
+			pthread_exit(NULL); //solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+		default:
+			log_warning(logger, "Operacion desconocida.");
+			break;
+		}
+	}
 }

@@ -1,12 +1,16 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
+#include <pthread.h>
 #include "main.h"
 
 config_struct config;
 
 int main(int argc, char* argv[]) {
     
+    // creo hilos
+    pthread_t thread_dispatch, thread_interrupt;
+
     int conexion_memoria;
     t_config* archivo_config = iniciar_config("cpu.config");    
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
@@ -15,12 +19,30 @@ int main(int argc, char* argv[]) {
 
     decir_hola("CPU");
 
-    //Servidor CPU
-    //dispatch
+    //Conexion con Memoria
+    conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
+    enviar_conexion("CPU", conexion_memoria);
+
+    // Servidor CPU
+    // conexion dispatch
     int socket_servidor_dispatch = iniciar_servidor(config.puerto_escucha_dispatch);
     log_info(logger, config.puerto_escucha_dispatch);
     log_info(logger, "Server CPU DISPATCH");
 
+    // conexion interrupt
+    int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
+    log_info(logger, config.puerto_escucha_interrupt);
+    log_info(logger, "Server CPU INTERRUPT"); 
+
+    // creo hilos para servidores CPU
+    pthread_create(&thread_dispatch, NULL, servidor_escucha, &socket_servidor_dispatch);
+    pthread_create(&thread_interrupt, NULL, servidor_escucha, &socket_servidor_interrupt);
+
+    // espero a los que los hilos terminen su ejecución
+    pthread_join(thread_dispatch, NULL);
+    pthread_join(thread_interrupt, NULL);
+
+    /*
     int cliente_dispatch = esperar_cliente(socket_servidor_dispatch);
     int continuar = 1;
     while(continuar){
@@ -40,10 +62,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    //interrupt
-    int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
-    log_info(logger, config.puerto_escucha_interrupt);
-    log_info(logger, "Server CPU INTERRUPT"); 
 
     int cliente_interrupt = esperar_cliente(socket_servidor_interrupt);
     continuar = 1;
@@ -63,10 +81,7 @@ int main(int argc, char* argv[]) {
             break;
         }
     }
-
-    //Conexion con Memoria
-    conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
-    enviar_conexion("CPU", conexion_memoria);
+    */
 
     //Limpieza
     log_destroy(logger);
@@ -84,4 +99,6 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.cantidad_entradas_tlb = config_get_string_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
+
+
 

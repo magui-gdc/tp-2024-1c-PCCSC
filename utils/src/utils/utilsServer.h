@@ -9,6 +9,7 @@
 #include <commons/log.h>
 #include <commons/collections/list.h>
 #include <string.h>
+#include <pthread.h>
 #include "enums.h"
 
 extern t_log* logger;
@@ -20,5 +21,7 @@ int iniciar_servidor(char*);
 int esperar_cliente(int);
 void recibir_conexion(int);
 int recibir_operacion(int);
+void* servidor_escucha(void*);
+void* atender_cliente(void*);
 
 #endif
