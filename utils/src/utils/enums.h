@@ -3,7 +3,8 @@
 
 typedef enum
 {
-	CONEXION
+	CONEXION,
+	PAQUETE
 }op_code;
 
 #endif
