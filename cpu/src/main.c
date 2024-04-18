@@ -38,50 +38,9 @@ int main(int argc, char* argv[]) {
     pthread_create(&thread_dispatch, NULL, servidor_escucha, &socket_servidor_dispatch); 
     pthread_create(&thread_interrupt, NULL, servidor_escucha, &socket_servidor_interrupt);
 
-    // espero a los que los hilos terminen su ejecución
+    // espero a los que los hilos terminen su ejecucion
     pthread_join(thread_dispatch, NULL);
     pthread_join(thread_interrupt, NULL);
-
-    /*
-    int cliente_dispatch = esperar_cliente(socket_servidor_dispatch);
-    int continuar = 1;
-    while(continuar){
-        int cod_op = recibir_operacion(cliente_dispatch);
-        switch (cod_op)
-        {
-        case CONEXION:
-            recibir_conexion(cliente_dispatch);
-            break;
-        case -1:
-            log_error(logger, "cliente desconectado de DISPATCH");
-            continuar = 0;
-            break;
-        default:
-            log_warning(logger, "Operacion desconocida.");
-            break;
-        }
-    }
-
-
-    int cliente_interrupt = esperar_cliente(socket_servidor_interrupt);
-    continuar = 1;
-    while(continuar){
-        int cod_op = recibir_operacion(cliente_interrupt);
-        switch (cod_op)
-        {
-        case CONEXION:
-            recibir_conexion(cliente_interrupt);
-            break;
-        case -1:
-            log_error(logger, "cliente desconectado de INT");
-            continuar = 0;
-            break;
-        default:
-            log_warning(logger, "Operacion desconocida.");
-            break;
-        }
-    }
-    */
 
     //Limpieza
     log_destroy(logger);

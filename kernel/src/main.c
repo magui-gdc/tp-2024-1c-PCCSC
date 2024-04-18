@@ -12,6 +12,14 @@ int main(int argc, char* argv[]) {
     cargar_config_struct_KERNEL(archivo_config);
     logger = log_create("log.log", "Servidor", 1, LOG_LEVEL_DEBUG);
     
+    pthread_t thread_kernel;
+    
+    /*
+    Ademas de las operaciones de la consola interactiva, el Kernel sera el encargado de gestionar las peticiones contra la Memoria y las interfaces de I/O 
+    (conectadas dinamicamente), por lo que debera implementarse siguiendo una estrategia multihilo que permita la concurrencia de varias solicitudes desde o hacia diferentes madulos.
+    Sumado a esto, el Kernel se encargara de planificar la ejecucion de los procesos del sistema en el modulo CPU a traves de dos conexiones con el mismo:  una de dispatch y otra de interrupt.
+    */
+
     decir_hola("Kernel");
 
     // CONEXION CLIENTE - SERVIDORES
@@ -24,7 +32,6 @@ int main(int argc, char* argv[]) {
     log_info(logger, "se conecta a CPU puerto DISPATCH 2");
     enviar_conexion("Kernel 2 a DISPATCH", conexion_cpu_dispatch2);
 
-    //sleep(1); // para esperar que levante el servidor CPU INTERRUPT(esto ta maal porque debería estar en un hilo cada espera de servidores)
     conexion_cpu_interrupt = crear_conexion(config.ip_cpu, config.puerto_cpu_interrupt);
     log_info(logger, "se conecta a CPU puerto INTERRUPT");
     enviar_conexion("Kernel a INTERRUPT", conexion_cpu_interrupt);
@@ -43,28 +50,18 @@ int main(int argc, char* argv[]) {
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
     log_info(logger, config.puerto_escucha);
     log_info(logger, "Server KERNEL iniciado");
+    
+    // un hilo por consola: desde donde se crean procesos, matan procesos, se detiene planificacion ...
+    // un hilo por solicitud a memoria
 
-    int cliente;  
-    while((cliente = esperar_cliente(socket_servidor)) != -1){
-        int cod_op = recibir_operacion(cliente);
-        switch (cod_op)
-        {
-        case CONEXION:
-            recibir_conexion(cliente);
-            break;
-        case -1:
-            log_error(logger, "cliente desconectado");
-            break;
-        default:
-            log_warning(logger, "Operacion desconocida.");
-            break;
-        }
-    }
-
+    // un hilo por espera de I/O
+    pthread_create(&thread_kernel, NULL, servidor_escucha, &socket_servidor); 
+    
+    pthread_join(thread_kernel, NULL);
+    
     log_destroy(logger);
 	config_destroy(archivo_config);
     liberar_conexion(conexion_memoria);
-    
     
     return EXIT_SUCCESS;
 }

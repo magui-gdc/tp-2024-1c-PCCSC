@@ -49,17 +49,25 @@ void cargar_config_struct_IO(t_config* archivo_config){
 }
 
 void paquete(int conexion) {
-	char* leido;
+	char* leido = malloc(sizeof(char));
 	t_paquete* paquete;
+    int tamanio;
 
 	paquete = crear_paquete();
 
-	leido = readline("> ");
-
-	while(strcmp(leido, "")){
-		agregar_a_paquete(paquete, leido, sizeof(leido));
+	while (1){
 		leido = readline("> ");
-	};
+
+		if(strlen(leido)==0){
+			free(leido);
+			break;
+		}
+
+		tamanio = strlen(leido) + 1;
+		agregar_a_paquete(paquete, leido, tamanio);
+		// libero lineas
+		//free(leido);
+	}
 
 	enviar_paquete(paquete, conexion);
 

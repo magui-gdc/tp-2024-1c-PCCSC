@@ -40,7 +40,6 @@ int main(int argc, char* argv[]) {
 }
 
 void cargar_config_struct_MEMORIA(t_config* archivo_config){
-
     config.puerto_escucha = config_get_string_value(archivo_config, "PUERTO_ESCUCHA");
     config.tam_memoria = config_get_string_value(archivo_config, "TAM_MEMORIA");
     config.tam_pagina = config_get_string_value(archivo_config, "TAM_PAGINA");
