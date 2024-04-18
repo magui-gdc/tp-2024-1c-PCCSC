@@ -14,14 +14,25 @@
 
 extern t_log* logger;
 
-// CONEXION CLIENTE - SERVIDOR
+// CONEXION CLIENTE - SERVIDOR ---- INICIACION
+int iniciar_servidor(char*, t_log*);
+int esperar_cliente(int);
+
+// CONEXION CLIENTE - SERVIDOR ---- COMUNICACION
+//operacion
+int recibir_operacion(int);
 void* recibir_buffer(int*, int);
 
-int iniciar_servidor(char*);
-int esperar_cliente(int);
+///conexion (mensajes)
 void recibir_conexion(int);
-int recibir_operacion(int);
+
+///paquetes
+t_list* recibir_paquete(int);
+
+
+//threads
 void* servidor_escucha(void*);
 void* atender_cliente(void*);
+
 
 #endif
