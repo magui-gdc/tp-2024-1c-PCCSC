@@ -7,7 +7,7 @@ config_struct config;
 
 int main(int argc, char* argv[]) {
 
-    int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
+    int conexion_cpu_dispatch, conexion_cpu_dispatch2, conexion_memoria, conexion_cpu_interrupt;
     t_config* archivo_config = iniciar_config("kernel.config");
     cargar_config_struct_KERNEL(archivo_config);
     logger = log_create("log.log", "Servidor", 1, LOG_LEVEL_DEBUG);
@@ -19,17 +19,18 @@ int main(int argc, char* argv[]) {
     conexion_cpu_dispatch = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
     log_info(logger, "se conecta a CPU puerto DISPATCH 1");
     enviar_conexion("Kernel 1 a DISPATCH", conexion_cpu_dispatch);
-	liberar_conexion(conexion_cpu_dispatch); 
 
-    conexion_cpu_dispatch = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
+    conexion_cpu_dispatch2 = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch2);
     log_info(logger, "se conecta a CPU puerto DISPATCH 2");
-    enviar_conexion("Kernel 2 a DISPATCH", conexion_cpu_dispatch);
-	liberar_conexion(conexion_cpu_dispatch); 
+    enviar_conexion("Kernel 2 a DISPATCH", conexion_cpu_dispatch2);
 
     //sleep(1); // para esperar que levante el servidor CPU INTERRUPT(esto ta maal porque debería estar en un hilo cada espera de servidores)
     conexion_cpu_interrupt = crear_conexion(config.ip_cpu, config.puerto_cpu_interrupt);
     log_info(logger, "se conecta a CPU puerto INTERRUPT");
     enviar_conexion("Kernel a INTERRUPT", conexion_cpu_interrupt);
+    
+	liberar_conexion(conexion_cpu_dispatch); 
+    liberar_conexion(conexion_cpu_dispatch2); 
     liberar_conexion(conexion_cpu_interrupt);
     
     // a memoria

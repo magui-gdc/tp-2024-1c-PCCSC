@@ -35,7 +35,7 @@ int main(int argc, char* argv[]) {
     log_info(logger, "Server CPU INTERRUPT"); 
 
     // creo hilos para servidores CPU
-    pthread_create(&thread_dispatch, NULL, servidor_escucha, &socket_servidor_dispatch);
+    pthread_create(&thread_dispatch, NULL, servidor_escucha, &socket_servidor_dispatch); 
     pthread_create(&thread_interrupt, NULL, servidor_escucha, &socket_servidor_interrupt);
 
     // espero a los que los hilos terminen su ejecución

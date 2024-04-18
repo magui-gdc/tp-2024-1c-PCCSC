@@ -42,7 +42,7 @@ int iniciar_servidor(char* PUERTO){
 }
 
 int esperar_cliente(int socket_servidor){
-	int socket_cliente = accept(socket_servidor, NULL, NULL);
+	int socket_cliente = accept(socket_servidor, NULL, NULL); // BLOQUEANTE
 	log_info(logger, "Se conecto un cliente!");
 
 	return socket_cliente;
@@ -79,6 +79,7 @@ void recibir_conexion(int socket_cliente){
 
 void* servidor_escucha(void* conexion){
 	int fd_escucha = *(int*) conexion; // el contenido de la conexion
+	// MULTIPLEXACION : ATENDER CLIENTES SIMULTÁNEAMETE
 	while(1){
 		int *fd_conexion_ptr = malloc(sizeof(int)); // malloc para que por cada cliente aceptado se lo atienda por separado
 		*fd_conexion_ptr = esperar_cliente(fd_escucha);
@@ -90,10 +91,11 @@ void* servidor_escucha(void* conexion){
 	return NULL;
 }
 
+// después va personalizada para cada modulo
 void* atender_cliente(void* cliente){
 	int cliente_recibido = *(int*) cliente;
 	while(1){
-		int cod_op = recibir_operacion(cliente_recibido);
+		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
 		switch (cod_op)
 		{
 		case CONEXION:
@@ -101,14 +103,14 @@ void* atender_cliente(void* cliente){
 			break;
 		case PAQUETE:
 			t_list* lista = recibir_paquete(cliente_recibido);
-			log_info(logger, "Me llegaron los siguientes valores:\n")
+			log_info(logger, "Me llegaron los siguientes valores:\n");
 			list_iterate(lista, (void*) iterator); //esto es un mapeo
 			break;
 		case -1:
 			log_error(logger, "Cliente desconectado.");
 			close(cliente_recibido); // cierro el socket accept del cliente
 			free(cliente); // libero el malloc reservado para el cliente
-			pthread_exit(NULL); //solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
 		default:
 			log_warning(logger, "Operacion desconocida.");
 			break;
