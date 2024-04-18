@@ -15,7 +15,7 @@
 extern t_log* logger;
 
 // CONEXION CLIENTE - SERVIDOR ---- INICIACION
-int iniciar_servidor(char*, t_log*);
+int iniciar_servidor(char*);
 int esperar_cliente(int);
 
 // CONEXION CLIENTE - SERVIDOR ---- COMUNICACION

@@ -25,6 +25,11 @@ int crear_conexion(char* ip, char* puerto){
     return socket_cliente;
 }
 
+void crear_buffer(t_paquete* paquete){
+	paquete->buffer = malloc(sizeof(t_buffer));
+	paquete->buffer->size = 0;
+	paquete->buffer->stream = NULL;
+}
 
 void enviar_conexion(char* mensaje, int socket_cliente)
 {

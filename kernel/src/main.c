@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     log_info(logger, "se conecta a CPU puerto DISPATCH 1");
     enviar_conexion("Kernel 1 a DISPATCH", conexion_cpu_dispatch);
 
-    conexion_cpu_dispatch2 = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch2);
+    conexion_cpu_dispatch2 = crear_conexion(config.ip_cpu, config.puerto_cpu_dispatch);
     log_info(logger, "se conecta a CPU puerto DISPATCH 2");
     enviar_conexion("Kernel 2 a DISPATCH", conexion_cpu_dispatch2);
 
