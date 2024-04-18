@@ -24,13 +24,22 @@ typedef struct
 } t_paquete;
 
 
-// SERIALIZACION
-void* serializar_paquete(t_paquete*, int);
 
-// CONEXION CLIENTE - SERVIDOR
+
+// CONEXION CLIENTE - SERVIDOR ----- INICIACION
 int crear_conexion(char*, char*);
+
+
+// CONEXION CLIENTE - SERVIDOR ----- COMUNICACION
 void enviar_conexion(char*, int);
-void eliminar_paquete(t_paquete*);
 void liberar_conexion(int);
+
+///paquetes
+t_paquete* crear_paquete(void);
+void agregar_a_paquete(t_paquete* paquete, void* valor, int tamanio);
+void enviar_paquete(t_paquete* paquete, int socket_cliente);
+void eliminar_paquete(t_paquete*);
+///serializacion
+void* serializar_paquete(t_paquete*, int);
 
 #endif
