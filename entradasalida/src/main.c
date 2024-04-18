@@ -18,11 +18,13 @@ int main(int argc, char* argv[]) {
     // establecer conexion con KERNEL
     conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
     enviar_conexion("Interfaz I/O", conexion_kernel);
+    paquete(conexion_kernel);
     
     
     // establecer conexion con MEMORIA
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
     enviar_conexion("Interfaz I/O", conexion_memoria);
+    paquete(conexion_memoria);
     
 
     log_destroy(logger);
@@ -44,4 +46,23 @@ void cargar_config_struct_IO(t_config* archivo_config){
     config.path_base_dialfs = config_get_string_value(archivo_config, "PATH_BASE_DIALFS");
     config.block_size = config_get_string_value(archivo_config, "BLOCK_SIZE");
     config.block_count = config_get_string_value(archivo_config, "BLOCK_COUNT");
+}
+
+void paquete(int conexion) {
+	char* leido;
+	t_paquete* paquete;
+
+	paquete = crear_paquete();
+
+	leido = readline("> ");
+
+	while(strcmp(leido, "")){
+		agregar_a_paquete(paquete, leido, sizeof(leido));
+		leido = readline("> ");
+	};
+
+	enviar_paquete(paquete, conexion);
+
+	free(leido);
+	eliminar_paquete(paquete);
 }

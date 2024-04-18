@@ -28,6 +28,7 @@ void recibir_conexion(int);
 
 ///paquetes
 t_list* recibir_paquete(int);
+void iterator(char*value);
 
 
 //threads

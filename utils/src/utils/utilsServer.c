@@ -99,6 +99,11 @@ void* atender_cliente(void* cliente){
 		case CONEXION:
 			recibir_conexion(cliente_recibido);
 			break;
+		case PAQUETE:
+			t_list* lista = recibir_paquete(cliente_recibido);
+			log_info(logger, "Me llegaron los siguientes valores:\n")
+			list_iterate(lista, (void*) iterator); //esto es un mapeo
+			break;
 		case -1:
 			log_error(logger, "Cliente desconectado.");
 			close(cliente_recibido); // cierro el socket accept del cliente
@@ -109,6 +114,10 @@ void* atender_cliente(void* cliente){
 			break;
 		}
 	}
+}
+
+void iterator(char* value) {
+	log_info(logger,"%s", value);
 }
 
 t_list* recibir_paquete(int socket_cliente)
