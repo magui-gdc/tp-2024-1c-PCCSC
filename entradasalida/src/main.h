@@ -1,5 +1,6 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
+#include<readline/readline.h>
 #include <utils/config.h>
 
 typedef struct

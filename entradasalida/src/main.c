@@ -66,11 +66,9 @@ void paquete(int conexion) {
 		tamanio = strlen(leido) + 1;
 		agregar_a_paquete(paquete, leido, tamanio);
 		// libero lineas
-		//free(leido);
+		free(leido);
 	}
 
 	enviar_paquete(paquete, conexion);
-
-	free(leido);
 	eliminar_paquete(paquete);
 }
