@@ -28,8 +28,8 @@ int main(int argc, char* argv[]) {
     enviar_conexion("Kernel a INTERRUPT", conexion_cpu_interrupt);
     
     // conexion memoria
-    log_info(logger, "se conecta a MEMORIA puerto INTERRUPT");
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
+    log_info(logger, "se conecta a MEMORIA");
     enviar_conexion("Kernel", conexion_memoria);
     
 

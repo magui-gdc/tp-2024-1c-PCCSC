@@ -66,8 +66,10 @@ void cargar_config_struct_CPU(t_config* archivo_config){
 
 void* recibir_IO(void* conexion){
     int cliente;  
-    while((cliente = esperar_cliente(conexion)) != -1){
+    while((cliente = esperar_cliente(*(int*)conexion)) != -1){
+
         int cod_op = recibir_operacion(cliente);
+
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL
         // LA ESPERA DE SOLICITUDES EN PUERTO INTERRUPT ES A DEMANDA DEL PUERTO DISPATCH EN EL ULTIMO PASO DEL CICLO DE INSTRUCCIONES
         switch (cod_op)

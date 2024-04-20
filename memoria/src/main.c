@@ -27,6 +27,12 @@ int main(int argc, char* argv[]) {
         case CONEXION:
             recibir_conexion(cliente);
             break;
+        case PAQUETE:
+        	log_info(logger, "ATENCION! ME ESTA POR LLEGAR UN PAQUETE JIJIJI:\n");
+			t_list* lista = recibir_paquete(cliente);
+			log_info(logger, "Me llegaron los siguientes valores:\n");
+			list_iterate(lista, (void*) iterator); //esto es un mapeo
+			break;
         case -1:
             log_error(logger, "cliente desconectado");
             break;
