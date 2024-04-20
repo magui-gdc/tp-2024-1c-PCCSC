@@ -25,3 +25,5 @@ typedef struct
 extern config_struct config;
 
 void cargar_config_struct_CPU(t_config*);
+
+void* recibir_IO(void*);

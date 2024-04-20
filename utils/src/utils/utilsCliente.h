@@ -8,7 +8,9 @@
 #include<sys/socket.h>
 #include<netdb.h>
 #include <string.h>
+#include<readline/readline.h>
 #include "enums.h"
+
 
 
 typedef struct
