@@ -11,7 +11,7 @@ int iniciar_servidor(char* PUERTO){
 
   	int socket_servidor;
 	int err;
-	struct addrinfo hints, *servinfo, *p;
+	struct addrinfo hints, *servinfo;
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
