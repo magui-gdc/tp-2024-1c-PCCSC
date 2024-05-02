@@ -4,6 +4,7 @@
 #include<commons/config.h>
 
 typedef struct {
+    uint32_t PC;
     // registros numéricos de propósito general
     uint8_t AX;
     uint8_t BX;

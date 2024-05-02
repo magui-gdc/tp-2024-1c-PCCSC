@@ -5,6 +5,7 @@
 #include "main.h"
 
 config_struct config;
+t_registros_cpu registros; 
 
 int main(int argc, char* argv[]) {
     

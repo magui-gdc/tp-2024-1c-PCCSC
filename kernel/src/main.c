@@ -7,6 +7,12 @@ config_struct config;
 t_list* pcb_list; // lista dinámica que contiene los PCB de los procesos creados
 uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
 
+t_queue* cola_NEW;
+t_queue* cola_READY;
+t_queue* cola_BLOCKED;
+t_queue* cola_RUNNING;
+t_queue* cola_EXIT;
+
 int main(int argc, char* argv[]) {
 
     int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
@@ -115,16 +121,16 @@ void* consola_kernel(void*archivo_config){
                 }
             } else if(strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char* path = tokens[1];
+                uint8_t pid_proceso_iniciado;
                  if(strlen(path) != 0 && path != NULL ){
-                    // iniciar_proceso(path):
-                        // comprueba existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
-                        // crea un t_pcb, 
-                        // le carga en el pid el valor de pid++ (actualizando valor de la variable)
-                        // le carga el quantum cargado en config.quantum
-                        // le carga el pc en 0 (?)
-                        // le carga el estado en NEW
-                        // list_add(pcb_list, new_pcb);
-                        // lo agrega en la cola NEW --> consultada desde planificador_largo_plazo, evaluar semáforo. 
+                    
+                    if(1){
+                        pid_proceso_iniciado=iniciar_proceso(path);
+                    } //ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
+                    //thread_create con funcion largo plazo y parametro pid_proceso_iniciado
+
+                    // lo agrega en la cola NEW --> consultada desde planificador_largo_plazo, evaluar semáforo. 
+
                     printf("path ingresado (iniciar_proceso): %s\n", path);
                 }
             } else if(strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
@@ -171,3 +177,69 @@ void* planificar_largo_plazo(void* arg){
         // PLANIFICACION Largo plazo
     }
 }
+
+void crear_colas(){
+    cola_NEW = queue_create();
+    cola_READY = queue_create();
+    cola_BLOCKED = queue_create();
+    cola_RUNNING = queue_create();
+    cola_EXIT = queue_create(); 
+}
+
+void destruir_colas(){ //ver si es mejor usar queue_destroy_and_destroy_elements o esto, es opcional el parametro ese??
+    queue_clean(cola_NEW);
+    queue_destroy(cola_NEW);
+    queue_clean(cola_READY);
+    queue_destroy(cola_READY);
+    queue_clean(cola_BLOCKED);
+    queue_destroy(cola_BLOCKED);
+    queue_clean(cola_RUNNING);
+    queue_destroy(cola_RUNNING);
+    queue_clean(cola_EXIT);
+    queue_destroy(cola_EXIT);
+    free(cola_NEW);
+    free(cola_READY);
+    free(cola_BLOCKED);
+    free(cola_RUNNING);
+    free(cola_EXIT);
+}
+
+uint32_t iniciar_proceso(void* arg){
+
+    t_pcb * proceso;
+
+    proceso->estado = NEW;
+    proceso->quantum = 0;
+    proceso->program_counter = 0; //arranca en 0? 
+    proceso->pid = pid;
+    //proceso->registros = obtener_registros_CPU(); REVISAR
+
+    pid++;
+
+    queue_push(cola_NEW, proceso);
+    list_add(pcb_list, proceso);
+
+    return proceso->pid;
+}
+
+t_registros_cpu obtener_registros_CPU(){
+    //agregar pedido de registros al CPU
+}
+/*
+bool comparacion(uint8_t _pid) {
+        t_pcb* pcb = (t_pcb*)elemento;
+        uint8_t pid_busqueda = _pid;
+        return pcb->pid == pid_busqueda;
+}
+
+void finalizar_proceso(char* pid_buscado){
+    
+    struct {
+        uint8_t _pid = (uint8_t)atoi(pid_buscado);
+        t_pcb* elemento;
+    }
+    t_pcb* proc = list_find(pcb_list, comparacion);
+    free(proc);
+
+}
+*/

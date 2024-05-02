@@ -3,6 +3,7 @@
 #include <commons/config.h>
 #include <utils/config.h>
 #include <commons/string.h>
+#include <commons/collections/queue.h>
 
 typedef enum {
     NEW, 
@@ -35,6 +36,8 @@ typedef struct {
     e_estado_proceso estado;
 } t_pcb;
 
+
+
 extern config_struct config;
 extern t_list* pcb_list; // lista dinámica que contiene los PCB de los procesos creados
 extern uint32_t pid; // contador para determinar el PID de cada proceso creado
@@ -44,3 +47,9 @@ void cargar_config_struct_KERNEL(t_config*);
 void* consola_kernel(void*);
 void* planificar_corto_plazo(void*);
 void* planificar_largo_plazo(void*);
+
+void crear_colas();
+void destruir_colas();
+
+
+uint32_t iniciar_proceso(void*);
