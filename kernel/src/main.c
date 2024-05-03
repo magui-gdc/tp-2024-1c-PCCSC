@@ -4,8 +4,13 @@
 #include "main.h"
 
 config_struct config;
+
 t_list* pcb_list; // lista dinámica que contiene los PCB de los procesos creados
 uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
+
+uint8_t PLANIFICACION_PAUSADA;
+
+prcs_fin FINALIZACION;
 
 t_queue* cola_NEW;
 t_queue* cola_READY;
@@ -13,7 +18,9 @@ t_queue* cola_BLOCKED;
 t_queue* cola_RUNNING;
 t_queue* cola_EXIT;
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[]) {  
+
+    PLANIFICACION_PAUSADA = 0;
 
     int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
@@ -100,6 +107,7 @@ void cargar_config_struct_KERNEL(t_config* archivo_config){
 // definicion funcion hilo consola
 void* consola_kernel(void*archivo_config){
     char* leido;
+
     while(1){
         leido = readline("> ");
 
@@ -123,11 +131,11 @@ void* consola_kernel(void*archivo_config){
                 char* path = tokens[1];
                 uint8_t pid_proceso_iniciado;
                  if(strlen(path) != 0 && path != NULL ){
-                    
-                    if(1){
-                        pid_proceso_iniciado=iniciar_proceso(path);
-                    } //ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
-                    //thread_create con funcion largo plazo y parametro pid_proceso_iniciado
+                    //solicitar creacion a memoria de proceso
+                    //si se crea proceso, iniciar largo plazo
+
+                    pid_proceso_iniciado=iniciar_proceso(path);
+                    //ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
 
                     // lo agrega en la cola NEW --> consultada desde planificador_largo_plazo, evaluar semáforo. 
 
@@ -137,6 +145,8 @@ void* consola_kernel(void*archivo_config){
                 char* pid = tokens[1];
                 if(strlen(pid) != 0 && pid != NULL && atoi(pid) > 0){
                     // finalizar_proceso(pid);
+                    FINALIZACION.FLAG_FINALIZACION = true; //falta que el cpu y los errores puedan activar el flag también
+                    FINALIZACION.PID = pid;
                     printf("pid ingresado (finalizar_proceso): %s\n", pid);
                 }
             } else if(strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2){
@@ -149,10 +159,10 @@ void* consola_kernel(void*archivo_config){
                     printf("grado multiprogramacion cambiado a %s\n", valor);
                 }
             } else if(strcmp(comando, "DETENER_PLANIFICACION") == 0){
-                // detener_planificacion()
+                PLANIFICACION_PAUSADA = 1;
                 printf("detener planificacion\n");
             } else if(strcmp(comando, "INICIAR_PLANIFICACION") == 0){
-                // iniciar_planificacion()
+                PLANIFICACION_PAUSADA = 0;
                 printf("iniciar planificacion\n");
             } else if(strcmp(comando, "PROCESO_ESTADO") == 0){
                 // estados_procesos()
@@ -174,8 +184,33 @@ void* planificar_corto_plazo(void* arg){
 
 void* planificar_largo_plazo(void* arg){
     while(1){
-        // PLANIFICACION Largo plazo
+        if(!PLANIFICACION_PAUSADA){
+            //NEW -> READY
+            if(queue_size(cola_NEW) != 0 /*&& grado de multiprogamacion lo permite*/){
+            queue_push(cola_READY) = queue_peek(cola_NEW);
+            queue_pop(cola_NEW);
+            //-> EXIT
+            if(FINALIZACION.FLAG_FINALIZACION){
+                if(obtener_cola(FINALIZACION.PID) == cola_RUNNING){
+                    //mensaje de interrupt al cpu
+                    queue_push(cola_EXIT) = queue_peek(cola_RUNNING);
+                    queue_pop(cola_RUNNING);
+                } else {
+                    queue_push(cola_EXIT) = queue_peek(obtener_cola(FINALIZACION.PID));
+                    queue_pop(obtener_cola(FINALIZACION.PID));
+                    
+                }
+                if(obtener_cola(FINALIZACION.PID) != cola_NEW){
+                    //habilitar espacio de multiprogramación (esto será muy probablemente un semáforo)
+                }
+                //poner error si se encuentra en la cola_EXIT
+            }
+        }
+
     }
+        }
+        // PLANIFICACION Largo plazo
+
 }
 
 void crear_colas(){
@@ -184,6 +219,46 @@ void crear_colas(){
     cola_BLOCKED = queue_create();
     cola_RUNNING = queue_create();
     cola_EXIT = queue_create(); 
+}
+
+t_queue* obtener_cola(uint32_t pid){
+    t_pcb* pcb = list_find(pcb_list, /* ???? no se com hacer esta func*/);
+    //podemos hacer que tras encontrar el pcb, en vez de hacer los if, obtenemos su estado (pcb->estado) 
+    //y en base a eso hacemos un switch ya que la variable estado es enum
+
+    //Tincho, dejalo comentado y lo dejamos asi por ahora, despues se lo mostramos a los chicos, y si quieren lo hacemos con switch, pq no sabemos usar list_find xd
+    
+    switch(pcb->estado){
+        case NEW:
+            return cola_NEW;
+        case READY:
+            return cola_READY;
+        case BLOCKED:
+            return cola_BLOCKED;
+        case RUNNING:
+            return cola_RUNNING;
+        case EXIT:
+            return cola_EXIT;
+        default:
+            return 0 //y mensaje de error
+
+    }
+
+    /*if(queue_peek(cola_NEW) == pcb){
+        return cola_NEW
+    }
+    if(queue_peek(cola_READY) == pcb){
+        return cola_READY
+    }
+    if(queue_peek(cola_BLOCKED) == pcb){
+        return cola_BLOCKED
+    }
+    if(queue_peek(cola_RUNNING) == pcb){
+        return cola_RUNNING
+    }
+    if(queue_peek(cola_EXIT) == pcb){
+        return cola_EXIT
+    }*/ // <---- solución falopa
 }
 
 void destruir_colas(){ //ver si es mejor usar queue_destroy_and_destroy_elements o esto, es opcional el parametro ese??
@@ -204,6 +279,9 @@ void destruir_colas(){ //ver si es mejor usar queue_destroy_and_destroy_elements
     free(cola_EXIT);
 }
 
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+//esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
 uint32_t iniciar_proceso(void* arg){
 
     t_pcb * proceso;
@@ -212,7 +290,7 @@ uint32_t iniciar_proceso(void* arg){
     proceso->quantum = 0;
     proceso->program_counter = 0; //arranca en 0? 
     proceso->pid = pid;
-    //proceso->registros = obtener_registros_CPU(); REVISAR
+    proceso->registros = obtener_registros(/*arg? registros cpu???*/); 
 
     pid++;
 
@@ -222,9 +300,24 @@ uint32_t iniciar_proceso(void* arg){
     return proceso->pid;
 }
 
-t_registros_cpu obtener_registros_CPU(){
-    //agregar pedido de registros al CPU
+t_registros_cpu obtener_registros(){
+    t_registros_cpu registros
+    registros.PC  = &malloc(sizeof(uint32_t));
+    registros.AX  = &malloc(sizeof(uint8_t));
+    registros.BX  = &malloc(sizeof(uint8_t));
+    registros.CX  = &malloc(sizeof(uint8_t));
+    registros.DX  = &malloc(sizeof(uint8_t));
+    registros.EAX = &malloc(sizeof(uint32_t));
+    registros.EBX = &malloc(sizeof(uint32_t));
+    registros.ECX = &malloc(sizeof(uint32_t));
+    registros.EDX = &malloc(sizeof(uint32_t));
+    registros.SI  = &malloc(sizeof(uint32_t));
+    registros.DI  = &malloc(sizeof(uint32_t));
 }
+
+
+
+
 /*
 bool comparacion(uint8_t _pid) {
         t_pcb* pcb = (t_pcb*)elemento;
@@ -243,3 +336,5 @@ void finalizar_proceso(char* pid_buscado){
 
 }
 */
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -16,17 +16,17 @@ int main(int argc, char* argv[]) {
     decir_hola("una Interfaz de Entrada/Salida");
 
     // establecer conexion con KERNEL
-    conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
+    /*conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
     enviar_conexion("Interfaz I/O", conexion_kernel);
     paquete(conexion_kernel);
     log_info(logger, "envie paquete a kernel");
-    
+    */
     
     // establecer conexion con MEMORIA
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
     enviar_conexion("Interfaz I/O", conexion_memoria);
-    //paquete(conexion_memoria);
-    //log_info(logger, "envie paquete a memoria");
+    paquete(conexion_memoria);
+    log_info(logger, "envie paquete a memoria");
 
     log_destroy(logger);
 	config_destroy(archivo_config);

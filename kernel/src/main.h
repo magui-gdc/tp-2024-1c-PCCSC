@@ -36,6 +36,10 @@ typedef struct {
     e_estado_proceso estado;
 } t_pcb;
 
+typedef struct {
+    uint8_t FLAG_FINALIZACION;
+    uint32_t PID;
+} prcs_fin;
 
 
 extern config_struct config;
@@ -51,5 +55,6 @@ void* planificar_largo_plazo(void*);
 void crear_colas();
 void destruir_colas();
 
+t_queue* obtener_cola(uint32_t);
 
 uint32_t iniciar_proceso(void*);

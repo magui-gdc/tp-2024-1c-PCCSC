@@ -24,6 +24,8 @@ typedef struct
 
 extern config_struct config;
 
-void cargar_config_struct_CPU(t_config*);
+void cargar_config_struct(t_config*);
+
+void inicializar_registros();
 
 void* recibir_IO(void*);

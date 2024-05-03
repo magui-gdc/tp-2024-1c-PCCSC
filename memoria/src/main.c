@@ -4,6 +4,7 @@
 #include "main.h"
 
 config_struct config;
+pthread_t thread_memoria;
 
 int main(int argc, char* argv[]) {
 
@@ -18,6 +19,14 @@ int main(int argc, char* argv[]) {
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
     log_info(logger, config.puerto_escucha);
     log_info(logger, "Server MEMORIA iniciado");
+
+
+    if(pthread_create(&thread_memoria, NULL, servidor_escucha, &socket_servidor) != 0) {
+        log_error(logger, "No se ha podido crear el hilo para la conexion con interfaces I/O");
+        exit(EXIT_FAILURE);
+    } 
+
+
 
     int cliente;  
     while((cliente = esperar_cliente(socket_servidor)) != -1){

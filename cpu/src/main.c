@@ -32,6 +32,7 @@ int main(int argc, char* argv[]) {
     // ------------ CONEXION SERVIDOR - CLIENTES ------------
     // conexion dispatch
     int socket_servidor_dispatch = iniciar_servidor(config.puerto_escucha_dispatch);
+    inicializar_registros();
     log_info(logger, config.puerto_escucha_dispatch);
     log_info(logger, "Server CPU DISPATCH");
 
@@ -86,4 +87,18 @@ void* recibir_IO(void* conexion){
             break;
         }
     }
+}
+
+void inicializar_registros(){
+    registros.PC = 0;
+    registros.AX = 0;
+    registros.BX = 0;
+    registros.CX = 0;
+    registros.DX = 0;
+    registros.EAX = 0;
+    registros.EBX = 0;
+    registros.ECX = 0;
+    registros.EDX = 0;
+    registros.SI = 0;
+    registros.DI = 0;
 }
