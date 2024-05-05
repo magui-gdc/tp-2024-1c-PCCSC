@@ -4,6 +4,7 @@
 #include <utils/config.h>
 #include <commons/string.h>
 #include <commons/collections/queue.h>
+#include <semaphore.h>
 
 typedef enum {
     NEW, 
@@ -51,6 +52,8 @@ void cargar_config_struct_KERNEL(t_config*);
 void* consola_kernel(void*);
 void* planificar_corto_plazo(void*);
 void* planificar_largo_plazo(void*);
+void* planificar_new_to_ready(void*);
+void* planificar_all_to_exit(void*);
 
 void crear_colas();
 void destruir_colas();
