@@ -30,7 +30,8 @@ t_queue *cola_EXIT;
 
 sem_t mutex_planificacion_pausada, mutex_cola_ready, contador_grado_multiprogramacion, orden_planificacion;
 
-int main(int argc, char *argv[]){
+int main(int argc, char *argv[])
+{
 
     int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
@@ -38,18 +39,17 @@ int main(int argc, char *argv[]){
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
     t_config *archivo_config = iniciar_config("kernel.config");
     cargar_config_struct_KERNEL(archivo_config);
-    logger = log_create("log.log", "Servidor", 1, LOG_LEVEL_DEBUG);
+    logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_DEBUG);
 
     // -- INICIALIZACION VARIABLES GLOBALES -- //
     pid = 1;
     PLANIFICACION_PAUSADA = 0;
 
     // -- INICIALIZACION SEMAFOROS -- //
-    sem_init(&mutex_planificacion_pausada,0,1);
-    sem_init(&mutex_cola_ready,0,1);
-    sem_init(&orden_planificacion,0,0);
+    sem_init(&mutex_planificacion_pausada, 0, 1);
+    sem_init(&mutex_cola_ready, 0, 1);
+    sem_init(&orden_planificacion, 0, 0);
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
-
 
     decir_hola("Kernel");
 
@@ -103,7 +103,7 @@ int main(int argc, char *argv[]){
     pthread_join(thread_kernel_consola, NULL);
     pthread_join(thread_planificador_corto_plazo, NULL);
     pthread_join(thread_planificador_largo_plazo, NULL);
-    
+
     sem_destroy(&mutex_cola_ready);
     sem_destroy(&mutex_cola_ready);
     sem_destroy(&contador_grado_multiprogramacion);
@@ -130,11 +130,6 @@ void cargar_config_struct_KERNEL(t_config *archivo_config)
     config.puerto_cpu_interrupt = config_get_string_value(archivo_config, "PUERTO_CPU_INTERRUPT");
     config.algoritmo_planificacion = config_get_string_value(archivo_config, "ALGORITMO_PLANIFICACION");
     config.quantum = config_get_int_value(archivo_config, "QUANTUM");
-    // TODO: a partir de aca, en realidad no conviene guardarlos, porque los valores de estas claves se pueden modificar desde distintos hilos!
-    // por ahora lo comento para analizar despues
-    /*config.recursos = config_get_array_value(archivo_config, "RECURSOS" );
-    config.instancias = config_get_array_value(archivo_config, "INSTANCIAS");
-    config.grado_multiprogramacion = config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION");*/
 }
 
 // definicion funcion hilo consola
@@ -186,30 +181,38 @@ void *consola_kernel(void *archivo_config)
             }
             else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2)
             {
-                char *pid = tokens[1];
-                if (strlen(pid) != 0 && pid != NULL && atoi(pid) > 0)
+                char *pid_char = tokens[1];
+                if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0)
                 {
                     // finalizar_proceso(pid);
                     FINALIZACION.FLAG_FINALIZACION = true; // falta que el cpu y los errores puedan activar el flag también
-                    FINALIZACION.PID = pid;
-                    printf("pid ingresado (finalizar_proceso): %s\n", pid);
+                    FINALIZACION.PID = (uint32_t) atoi(pid_char);
+                    printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                 }
             }
             else if (strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2)
             {
                 char *valor = tokens[1];
-                if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0)
-                {
+                if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0){
+                    if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION")){   
+                        log_info(logger, "multigramacion mayor");
+                        int diferencia = atoi(valor) - config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION");
+                        for (int i = 0; i < diferencia; i++)
+                            sem_post(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
+                    } else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"))
+                    {
+                        log_info(logger, "multigramacion menor");
+                        int diferencia = config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION") - atoi(valor);
+                        for (int i = 0; i < diferencia; i++)
+                            sem_wait(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
+                    }
                     config_set_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION", valor);
-                    // TODO: WAIT MUTEX ACA!! => porque esta informacion es consultada desde PLANIFICACION_LARGO_PLAZO
-                    //contador_grado_multiprogramacion = config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION");
-                    sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
                     config_save((t_config *)archivo_config);
-                    // TODO: SIGNAL MUTEX ACA!! => porque esta informacion es consultada desde PLANIFICACION_LARGO_PLAZO
                     printf("grado multiprogramacion cambiado a %s\n", valor);
                 }
             }
-            else if (strcmp(comando, "DETENER_PLANIFICACION") == 0){   
+            else if (strcmp(comando, "DETENER_PLANIFICACION") == 0)
+            {
                 sem_wait(&mutex_planificacion_pausada);
                 PLANIFICACION_PAUSADA = 1; // escritura
                 sem_post(&mutex_planificacion_pausada);
@@ -239,8 +242,20 @@ void *planificar_corto_plazo(void *archivo_config)
 {
     while (1)
     {
-        // agregar SEMAFORO planificacion_pausada
-        // PLANIFICACION corto plazo
+        sem_wait(&orden_planificacion);
+        sem_wait(&mutex_cola_ready);
+        sleep(3);
+        log_info(logger, "estas en corto plazoo");
+        /*
+        // NEW -> READY ( TODO: delegar en  SUBhilo)
+        if (queue_size(cola_NEW) != 0){
+            sem_wait(&contador_grado_multiprogramacion)
+            queue_push(cola_READY, queue_peek(cola_NEW));
+            queue_pop(cola_NEW);
+        }
+        */
+        sem_post(&mutex_cola_ready);
+        sem_post(&contador_grado_multiprogramacion);
     }
 }
 
@@ -248,34 +263,46 @@ void *planificar_largo_plazo(void *archivo_config)
 {
     pthread_t thread_NEW_READY, thread_ALL_EXIT;
 
-    pthread_create(thread_NEW_READY, NULL, planificar_new_to_ready, archivo_config);
-    pthread_create(thread_ALL_EXIT, NULL, planificar_all_to_exit, NULL);
+    pthread_create(&thread_NEW_READY, NULL, planificar_new_to_ready, archivo_config);
+    pthread_create(&thread_ALL_EXIT, NULL, planificar_all_to_exit, NULL);
 
     pthread_detach(thread_NEW_READY);
     pthread_detach(thread_NEW_READY);
-   
+    return NULL;
 }
 
 void *planificar_new_to_ready(void *archivo_config)
 {
-    while (1){
+    while (1)
+    {
         sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA){ //lectura
+        if (!PLANIFICACION_PAUSADA)
+        { // lectura
             sem_post(&mutex_planificacion_pausada);
+            sem_wait(&contador_grado_multiprogramacion);
+            sem_wait(&mutex_cola_ready);
+            log_info(logger, "estas en largo plazoo");
+            /*
             // NEW -> READY ( TODO: delegar en  SUBhilo)
-            if (queue_size(cola_NEW) != 0 /*&& grado de multiprogamacion lo permite*/){
+            if (queue_size(cola_NEW) != 0){
                 sem_wait(&contador_grado_multiprogramacion)
                 queue_push(cola_READY, queue_peek(cola_NEW));
                 queue_pop(cola_NEW);
             }
-        } else {
+            */
+            sem_post(&mutex_cola_ready);
+            sem_post(&orden_planificacion);
+        }
+        else
+        {
             sem_post(&mutex_planificacion_pausada);
         }
     }
 }
 
-void *planificar_all_to_exit(void *args){
-    while (1)
+void *planificar_all_to_exit(void *args)
+{
+   /* while (1)
     {
         if (FINALIZACION.FLAG_FINALIZACION)
         {
@@ -296,7 +323,8 @@ void *planificar_all_to_exit(void *args){
             }
             // poner error si se encuentra en la cola_EXIT
         }
-    }
+    }*/
+    return NULL;
 }
 
 void crear_colas()
@@ -310,13 +338,13 @@ void crear_colas()
 
 t_queue *obtener_cola(uint32_t pid)
 {
-    t_pcb *pcb = list_find(pcb_list, /* ???? no se com hacer esta func*/);
+    //t_pcb *pcb = list_find(pcb_list, /* ???? no se com hacer esta func*/);
     // podemos hacer que tras encontrar el pcb, en vez de hacer los if, obtenemos su estado (pcb->estado)
     // y en base a eso hacemos un switch ya que la variable estado es enum
 
     // Tincho, dejalo comentado y lo dejamos asi por ahora, despues se lo mostramos a los chicos, y si quieren lo hacemos con switch, pq no sabemos usar list_find xd
 
-    switch (pcb->estado)
+    /*switch (pcb->estado)
     {
     case NEW:
         return cola_NEW;
@@ -330,7 +358,7 @@ t_queue *obtener_cola(uint32_t pid)
         return cola_EXIT;
     default:
         return 0 // y mensaje de error
-    }
+    }*/
 
     /*if(queue_peek(cola_NEW) == pcb){
         return cola_NEW
@@ -348,6 +376,7 @@ t_queue *obtener_cola(uint32_t pid)
         return cola_EXIT
     }*/
     // <---- solución falopa
+    return NULL;
 }
 
 void destruir_colas()
@@ -375,13 +404,13 @@ void destruir_colas()
 uint32_t iniciar_proceso(void *arg)
 {
 
-    t_pcb *proceso;
+    t_pcb *proceso = malloc(sizeof(t_pcb));
 
     proceso->estado = NEW;
     proceso->quantum = 0;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
-    proceso->registros = obtener_registros(/*arg? registros cpu???*/);
+    //proceso->registros = obtener_registros(/*arg? registros cpu???*/);
 
     pid++;
 
@@ -390,11 +419,10 @@ uint32_t iniciar_proceso(void *arg)
 
     return proceso->pid;
 }
-
-t_registros_cpu obtener_registros()
-{
-    t_registros_cpu registros
-        registros.PC = &malloc(sizeof(uint32_t));
+/*
+t_registros_cpu obtener_registros(){
+    t_registros_cpu registros;
+    registros.PC = &malloc(sizeof(uint32_t));
     registros.AX = &malloc(sizeof(uint8_t));
     registros.BX = &malloc(sizeof(uint8_t));
     registros.CX = &malloc(sizeof(uint8_t));
@@ -406,7 +434,7 @@ t_registros_cpu obtener_registros()
     registros.SI = &malloc(sizeof(uint32_t));
     registros.DI = &malloc(sizeof(uint32_t));
 }
-
+*/
 /*
 bool comparacion(uint8_t _pid) {
         t_pcb* pcb = (t_pcb*)elemento;

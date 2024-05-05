@@ -33,7 +33,7 @@ typedef struct {
     uint32_t pid;
     uint32_t program_counter;
     uint8_t quantum;
-    t_registros_cpu registros;
+    //t_registros_cpu registros;
     e_estado_proceso estado;
 } t_pcb;
 
@@ -59,5 +59,6 @@ void crear_colas();
 void destruir_colas();
 
 t_queue* obtener_cola(uint32_t);
+t_registros_cpu obtener_registros();
 
 uint32_t iniciar_proceso(void*);

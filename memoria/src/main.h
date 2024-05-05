@@ -15,7 +15,7 @@ typedef struct {
     char* tam_memoria;
     char* tam_pagina;
     char* path_instrucciones;
-    char* retardo_respuesta
+    char* retardo_respuesta;
 } config_struct;
 
 extern config_struct config;

@@ -87,6 +87,7 @@ void* recibir_IO(void* conexion){
             break;
         }
     }
+    return NULL;
 }
 
 void inicializar_registros(){
