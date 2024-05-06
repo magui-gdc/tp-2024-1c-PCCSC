@@ -4,7 +4,10 @@
 typedef enum
 {
 	CONEXION,
-	PAQUETE
+	PAQUETE,
+	INICIAR_PROCESO,
+	ELIMINAR_PROCESO,
+	INSTRUCCION
 }op_code;
 
 #endif

@@ -4,20 +4,20 @@
 #include "main.h"
 
 /* TODO:
-hilos de largo plazo (uno NEW->READY otro ALL->EXIT)
+hilos de largo plazo (uno NEW->READY otro ALL->EXIT) listo.
 atender_cliente por cada modulo
 corto_plazo
-semaforos (plantear: info en lucid.app)
-list_find funcion para comparar elementos
+semaforos (plantear: info en lucid.app) listo.
+list_find funcion para comparar elementos listo. (¡¡FALTA PROBARLO!!)
 comunicacion kernel - memoria - cpu (codigos de operacion, sockets, leer instrucciones y serializar)
 instruccion ENUM con una funcion que delegue segun ENUM una funcion a ejecutar
 memoria para leer en proceso (ver commmons)
 */
 
 config_struct config;
-
-t_list *pcb_list; // lista dinamica que contiene los PCB de los procesos creados
-uint32_t pid;     // PID: contador para determinar el PID de cada proceso creado
+t_list *pcb_list;
+// t_dictionary *pcb_dictionary; // dictionario dinamica que contiene los PCB de los procesos creados
+uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
 
 uint8_t PLANIFICACION_PAUSADA;
 prcs_fin FINALIZACION;
@@ -147,7 +147,6 @@ void *consola_kernel(void *archivo_config)
             free(leido);
             break;
         }
-
         char **tokens = string_split(leido, " ");
         char *comando = tokens[0];
         if (comando != NULL)
@@ -161,7 +160,7 @@ void *consola_kernel(void *archivo_config)
                     // ejecutar_script(path);
                     printf("path ingresado (ejecutar_script): %s\n", path);
                 }
-            }
+            } // INICIAR_PROCESO /carpetaProcesos/proceso1
             else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2)
             {
                 char *path = tokens[1];
@@ -185,21 +184,24 @@ void *consola_kernel(void *archivo_config)
                 if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0)
                 {
                     // finalizar_proceso(pid);
-                    FINALIZACION.FLAG_FINALIZACION = true; // falta que el cpu y los errores puedan activar el flag también
-                    FINALIZACION.PID = (uint32_t) atoi(pid_char);
+                    FINALIZACION.FLAG_FINALIZACION = true; // falta que el cpu y los errores puedan activar el flag tambien
+                    FINALIZACION.PID = (uint32_t)atoi(pid_char);
                     printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                 }
             }
             else if (strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2)
             {
                 char *valor = tokens[1];
-                if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0){
-                    if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION")){   
+                if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0)
+                {
+                    if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION"))
+                    {
                         log_info(logger, "multigramacion mayor");
                         int diferencia = atoi(valor) - config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION");
                         for (int i = 0; i < diferencia; i++)
                             sem_post(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
-                    } else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"))
+                    }
+                    else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"))
                     {
                         log_info(logger, "multigramacion menor");
                         int diferencia = config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION") - atoi(valor);
@@ -244,16 +246,8 @@ void *planificar_corto_plazo(void *archivo_config)
     {
         sem_wait(&orden_planificacion);
         sem_wait(&mutex_cola_ready);
-        sleep(3);
-        log_info(logger, "estas en corto plazoo");
-        /*
-        // NEW -> READY ( TODO: delegar en  SUBhilo)
-        if (queue_size(cola_NEW) != 0){
-            sem_wait(&contador_grado_multiprogramacion)
-            queue_push(cola_READY, queue_peek(cola_NEW));
-            queue_pop(cola_NEW);
-        }
-        */
+            sleep(3);
+            log_info(logger, "estas en corto plazoo");
         sem_post(&mutex_cola_ready);
         sem_post(&contador_grado_multiprogramacion);
     }
@@ -300,10 +294,10 @@ void *planificar_new_to_ready(void *archivo_config)
     }
 }
 
-void *planificar_all_to_exit(void *args)
-{
-   /* while (1)
+void *planificar_all_to_exit(void *args){
+    while (1)
     {
+        // TODO: analizar que pasa si se ejecutan dos finalizar procesos uno tras otro? analizar semaforo.
         if (FINALIZACION.FLAG_FINALIZACION)
         {
             if (obtener_cola(FINALIZACION.PID) == cola_RUNNING)
@@ -322,8 +316,9 @@ void *planificar_all_to_exit(void *args)
                 // habilitar espacio de multiprogramación (esto será muy probablemente un semáforo)
             }
             // poner error si se encuentra en la cola_EXIT
+            FINALIZACION.FLAG_FINALIZACION = FALSE;
         }
-    }*/
+    }
     return NULL;
 }
 
@@ -336,15 +331,20 @@ void crear_colas()
     cola_EXIT = queue_create();
 }
 
-t_queue *obtener_cola(uint32_t pid)
+void *buscar_pcb_por_pid(uint32_t pid_buscado)
 {
-    //t_pcb *pcb = list_find(pcb_list, /* ???? no se com hacer esta func*/);
-    // podemos hacer que tras encontrar el pcb, en vez de hacer los if, obtenemos su estado (pcb->estado)
-    // y en base a eso hacemos un switch ya que la variable estado es enum
+    bool comparar_pid(void *elemento){
+        t_pcb *pcb = (t_pcb *)elemento;
+        return pcb->pid == pid_buscado;
+    }
+    return list_find(pcb_list, comparar_pid); // si no funciona pasarlo como puntero a funcion
+}
 
-    // Tincho, dejalo comentado y lo dejamos asi por ahora, despues se lo mostramos a los chicos, y si quieren lo hacemos con switch, pq no sabemos usar list_find xd
-
-    /*switch (pcb->estado)
+t_queue *obtener_cola(uint32_t pid_buscado)
+{
+    // t_pcb *pcb = dictionary_get(pcb_dictionary, pid_buscado);
+    t_pcb *pcb_encontrado = (t_pcb *)buscar_pcb_por_pid(pid_buscado);
+    switch (pcb->estado)
     {
     case NEW:
         return cola_NEW;
@@ -357,25 +357,8 @@ t_queue *obtener_cola(uint32_t pid)
     case EXIT:
         return cola_EXIT;
     default:
-        return 0 // y mensaje de error
-    }*/
-
-    /*if(queue_peek(cola_NEW) == pcb){
-        return cola_NEW
+        return 0; // y mensaje de error
     }
-    if(queue_peek(cola_READY) == pcb){
-        return cola_READY
-    }
-    if(queue_peek(cola_BLOCKED) == pcb){
-        return cola_BLOCKED
-    }
-    if(queue_peek(cola_RUNNING) == pcb){
-        return cola_RUNNING
-    }
-    if(queue_peek(cola_EXIT) == pcb){
-        return cola_EXIT
-    }*/
-    // <---- solución falopa
     return NULL;
 }
 
@@ -410,14 +393,15 @@ uint32_t iniciar_proceso(void *arg)
     proceso->quantum = 0;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
-    //proceso->registros = obtener_registros(/*arg? registros cpu???*/);
+    // proceso->registros = obtener_registros(/*arg? registros cpu???*/);
 
     pid++;
 
     queue_push(cola_NEW, proceso);
-    list_add(pcb_list, proceso);
+    // dictionary_put(pcb_dictionary, pid, proceso);
+    list_add(pcb_list, proceso)
 
-    return proceso->pid;
+        return proceso->pid;
 }
 /*
 t_registros_cpu obtener_registros(){
@@ -436,11 +420,7 @@ t_registros_cpu obtener_registros(){
 }
 */
 /*
-bool comparacion(uint8_t _pid) {
-        t_pcb* pcb = (t_pcb*)elemento;
-        uint8_t pid_busqueda = _pid;
-        return pcb->pid == pid_busqueda;
-}
+
 
 void finalizar_proceso(char* pid_buscado){
 

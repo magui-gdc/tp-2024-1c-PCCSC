@@ -58,6 +58,7 @@ void* planificar_all_to_exit(void*);
 void crear_colas();
 void destruir_colas();
 
+void* buscar_pcb_por_pid(uint32_t);
 t_queue* obtener_cola(uint32_t);
 t_registros_cpu obtener_registros();
 

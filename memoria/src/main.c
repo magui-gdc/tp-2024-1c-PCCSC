@@ -33,6 +33,10 @@ int main(int argc, char* argv[]) {
         int cod_op = recibir_operacion(cliente);
         switch (cod_op)
         {
+        case INICIAR_PROCESO: //memoria recibe de kernel el proceso, recibe el path y lo chequea!!
+            break;
+        case ELIMINAR_PROCESO: //memoria elimina el proceso, kernel le pasa el path o el pid
+            break;
         case CONEXION:
             recibir_conexion(cliente);
             break;
@@ -60,4 +64,30 @@ void cargar_config_struct_MEMORIA(t_config* archivo_config){
     config.tam_pagina = config_get_string_value(archivo_config, "TAM_PAGINA");
     config.path_instrucciones = config_get_string_value(archivo_config, "PATH_INSTRUCCIONES");
     config.retardo_respuesta = config_get_string_value(archivo_config, "RETARDO_RESPUESTA");
+}
+
+void* atender_cliente_MEMORIA(void* cliente){
+	int cliente_recibido = *(int*) cliente;
+	while(1){
+		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
+		switch (cod_op)
+		{
+		case CONEXION:
+			recibir_conexion(cliente_recibido);
+			break;
+		case PAQUETE:
+			t_list* lista = recibir_paquete(cliente_recibido);
+			log_info(logger, "Me llegaron los siguientes valores:\n");
+			list_iterate(lista, (void*) iterator); //esto es un mapeo
+			break;
+		case -1:
+			log_error(logger, "Cliente desconectado.");
+			close(cliente_recibido); // cierro el socket accept del cliente
+			free(cliente); // libero el malloc reservado para el cliente
+			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+		default:
+			log_warning(logger, "Operacion desconocida.");
+			break;
+		}
+	}
 }

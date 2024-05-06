@@ -66,28 +66,32 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
 
-void* recibir_IO(void* conexion){
-    int cliente;  
-    while((cliente = esperar_cliente(*(int*)conexion)) != -1){
-
-        int cod_op = recibir_operacion(cliente);
-
-        // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL
-        // LA ESPERA DE SOLICITUDES EN PUERTO INTERRUPT ES A DEMANDA DEL PUERTO DISPATCH EN EL ULTIMO PASO DEL CICLO DE INSTRUCCIONES
-        switch (cod_op)
-        {
-        case CONEXION:
-            recibir_conexion(cliente);
+void* atender_cliente_MEMORIA(void* cliente){
+	int cliente_recibido = *(int*) cliente;
+	while(1){
+		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
+		switch (cod_op)
+		{
+        case INSTRUCCION:
             break;
-        case -1:
-            log_error(logger, "cliente desconectado");
-            break;
-        default:
-            log_warning(logger, "Operacion desconocida.");
-            break;
-        }
-    }
-    return NULL;
+		case CONEXION:
+			recibir_conexion(cliente_recibido);
+			break;
+		case PAQUETE:
+			t_list* lista = recibir_paquete(cliente_recibido);
+			log_info(logger, "Me llegaron los siguientes valores:\n");
+			list_iterate(lista, (void*) iterator); //esto es un mapeo
+			break;
+		case -1:
+			log_error(logger, "Cliente desconectado.");
+			close(cliente_recibido); // cierro el socket accept del cliente
+			free(cliente); // libero el malloc reservado para el cliente
+			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+		default:
+			log_warning(logger, "Operacion desconocida.");
+			break;
+		}
+	}
 }
 
 void inicializar_registros(){
