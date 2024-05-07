@@ -11,13 +11,8 @@ int main(int argc, char* argv[]) {
     
     int conexion_memoria;
 
-
-
-    
-    
-
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
-    pthread_t thread_dispatch, thread_interrupt;
+    pthread_t thread_interrupt; //, thread_dispatch;
     t_config* archivo_config = iniciar_config("cpu.config");    
     cargar_config_struct_CPU(archivo_config);
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
@@ -41,13 +36,47 @@ int main(int argc, char* argv[]) {
     log_info(logger, config.puerto_escucha_interrupt);
     log_info(logger, "Server CPU INTERRUPT"); 
 
-    pthread_create(&thread_dispatch, NULL, recibir_IO, &socket_servidor_dispatch); 
-    pthread_create(&thread_interrupt, NULL, recibir_IO, &socket_servidor_interrupt);
+    // hilo que recibe las interrupciones y las guarda en una 'lista' de interrupciones (PIC: Programmable Integrated Circuited) 
+                                                // -> (ANALIZAR BAJO QUÉ CRITERIO: ¿se podría agregar ordenado por PID y BIT DE PRIORIDAD?)
+    pthread_create(&thread_interrupt, NULL, recibir_interrupcion, &socket_servidor_interrupt); 
+    pthread_detach(thread_interrupt);
 
-    pthread_join(thread_dispatch, NULL);
-    pthread_join(thread_interrupt, NULL);
+    // NO hace falta un hilo para DISPATCH porque sólo KERNEL manda solicitudes a CPU, de forma SECUENCIAL (GRADO MULTIPROCESAMIENTO = 1)
+    //pthread_create(&thread_dispatch, NULL, recibir_IO, &socket_servidor_dispatch); 
+    //pthread_join(thread_dispatch, NULL);
+    int cliente_kernel;  
+    while((cliente_kernel = esperar_cliente(socket_servidor_dispatch)) != -1){
+        int cod_op = recibir_operacion(cliente_kernel);
+        // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
+        // (ciclo de instrucciones: en el último paso se consulta por la cola de las interrupciones para tratarlas en caso de que se lo requiera)
+        switch (cod_op)
+        {
+        case CONEXION:
+            recibir_conexion(cliente_kernel);
+            break;
+        case EJECUTAR_PROCESO:
+            // función que ejecuta el proceso por ciclos de instrucción: necesidad de algún BUCLE que controle los cuatro pasos
+            // hasta finalización, interrupción, bloqueo o error durante la ejecución del proceso
+            /*
+                1. FETCH: búsqueda de la sgte instrucción en MEMORIA (por valor del Program Counter pasado por el socket)
+                2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
+                3. EXECUTE: ejecutar la instrucción (se podría hacer un ENUM de todas las instrucciones posibles y por cada ENUM una función que determine qué acción 
+                            se realiza y cómo se actualiza el contexto del PRC pasado por socket. Considerar que ciertas INSTRUCCIONES deben mandar por puerto DISPATCH 
+                            a KERNEL ciertas solicitudes, como por ejemplo, WAIT-SIGNAL-ACCEDER A I/O-EXIT ..., y deberán esperar la respuesta de KERNEL para seguir avanzando
+                4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR)
+                Si no hay necesidad de abandonar la ejecución del proceso, una vez actualizado el contexto, suma 1 al Program Counter 
 
-    
+                IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
+            */
+            break;
+        case -1:
+            log_error(logger, "cliente desconectado");
+            break;
+        default:
+            log_warning(logger, "Operacion desconocida.");
+            break;
+        }
+    }
 
     //Limpieza
     log_destroy(logger);
@@ -66,34 +95,6 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
 
-void* atender_cliente_MEMORIA(void* cliente){
-	int cliente_recibido = *(int*) cliente;
-	while(1){
-		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
-		switch (cod_op)
-		{
-        case INSTRUCCION:
-            break;
-		case CONEXION:
-			recibir_conexion(cliente_recibido);
-			break;
-		case PAQUETE:
-			t_list* lista = recibir_paquete(cliente_recibido);
-			log_info(logger, "Me llegaron los siguientes valores:\n");
-			list_iterate(lista, (void*) iterator); //esto es un mapeo
-			break;
-		case -1:
-			log_error(logger, "Cliente desconectado.");
-			close(cliente_recibido); // cierro el socket accept del cliente
-			free(cliente); // libero el malloc reservado para el cliente
-			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
-		default:
-			log_warning(logger, "Operacion desconocida.");
-			break;
-		}
-	}
-}
-
 void inicializar_registros(){
     registros.PC = 0;
     registros.AX = 0;
@@ -106,4 +107,29 @@ void inicializar_registros(){
     registros.EDX = 0;
     registros.SI = 0;
     registros.DI = 0;
+}
+
+void* recibir_interrupcion(void* conexion){
+    int interrupcion_kernel, servidor_interrupt = *(int*) conexion;
+    while((interrupcion_kernel = esperar_cliente(servidor_interrupt)) != -1){
+        int cod_op = recibir_operacion(interrupcion_kernel);
+        switch (cod_op)
+        {
+        case INTERRUPCION:
+            // acá recibe la interrupción y la agrega en la estructura PIC (evaluar si es una lista con struct donde se guarden valores como el PID del proceso, la acción a tomar, y si se debe agregar ordenado según algún bit de prioridad)
+            break;
+        case -1:
+            log_error(logger, "cliente desconectado");
+            break;
+        default:
+            log_warning(logger, "Operacion desconocida.");
+            break;
+        }
+    }
+    return NULL;
+}
+
+// la dejo vacía y declarada porque, a pesar de que no la requeramos acá, como importamos el utilsServer.c necesita de una defición de esta función, hay que ver qué conviene más adelante
+void* atender_cliente(void* cliente){
+    return NULL;
 }

@@ -3,11 +3,16 @@
 
 typedef enum
 {
-	CONEXION,
+	CONEXION, // cliente - servidor
 	PAQUETE,
-	INICIAR_PROCESO,
-	ELIMINAR_PROCESO,
-	INSTRUCCION
+	INICIAR_PROCESO, // kernel - memoria
+	ELIMINAR_PROCESO, // kernel - memoria
+	INSTRUCCION,
+	EJECUTAR_PROCESO, // kernel - cpu
+	WAIT, // Instrucción WAIT cpu - kernel
+	SIGNAL, // Instruccion SIGNAL cpu - kernel
+	INSTRUCCION_EXIT, // Instrucción EXIT cpu - kernel
+	INTERRUPCION // kernel - cpu
 }op_code;
 
 #endif

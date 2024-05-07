@@ -28,4 +28,4 @@ void cargar_config_struct_CPU(t_config*);
 
 void inicializar_registros();
 
-void* recibir_IO(void*);
+void* recibir_interrupcion(void*);

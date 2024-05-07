@@ -91,8 +91,8 @@ void* servidor_escucha(void* conexion){
 	return NULL;
 }
 
-// después va personalizada para cada modulo
-void* atender_cliente(void* cliente){
+// se delega su definición en cada módulo SERVER
+/*void* atender_cliente(void* cliente){
 	int cliente_recibido = *(int*) cliente;
 	while(1){
 		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
@@ -117,6 +117,7 @@ void* atender_cliente(void* cliente){
 		}
 	}
 }
+*/
 
 void iterator(char* value) {
 	log_info(logger,"%s", value);

@@ -11,7 +11,7 @@ typedef enum {
     READY, 
     RUNNING, 
     BLOCKED, 
-    TERMINATED
+    EXIT
 } e_estado_proceso;
 
 typedef struct

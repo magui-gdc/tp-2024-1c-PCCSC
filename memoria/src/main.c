@@ -20,40 +20,15 @@ int main(int argc, char* argv[]) {
     log_info(logger, config.puerto_escucha);
     log_info(logger, "Server MEMORIA iniciado");
 
-
     if(pthread_create(&thread_memoria, NULL, servidor_escucha, &socket_servidor) != 0) {
-        log_error(logger, "No se ha podido crear el hilo para la conexion con interfaces I/O");
+        log_error(logger, "No se ha podido crear el hilo SERVIDOR de MEMORIA");
         exit(EXIT_FAILURE);
     } 
 
+    pthread_join(thread_memoria, NULL);
 
-
-    int cliente;  
-    while((cliente = esperar_cliente(socket_servidor)) != -1){
-        int cod_op = recibir_operacion(cliente);
-        switch (cod_op)
-        {
-        case INICIAR_PROCESO: //memoria recibe de kernel el proceso, recibe el path y lo chequea!!
-            break;
-        case ELIMINAR_PROCESO: //memoria elimina el proceso, kernel le pasa el path o el pid
-            break;
-        case CONEXION:
-            recibir_conexion(cliente);
-            break;
-        case PAQUETE:
-        	log_info(logger, "ATENCION! ME ESTA POR LLEGAR UN PAQUETE JIJIJI:\n");
-			t_list* lista = recibir_paquete(cliente);
-			log_info(logger, "Me llegaron los siguientes valores:\n");
-			list_iterate(lista, (void*) iterator); //esto es un mapeo
-			break;
-        case -1:
-            log_error(logger, "cliente desconectado");
-            break;
-        default:
-            log_warning(logger, "Operacion desconocida.");
-            break;
-        }
-    }
+    log_destroy(logger);
+    config_destroy(archivo_config);
 
     return EXIT_SUCCESS;
 }
@@ -66,12 +41,16 @@ void cargar_config_struct_MEMORIA(t_config* archivo_config){
     config.retardo_respuesta = config_get_string_value(archivo_config, "RETARDO_RESPUESTA");
 }
 
-void* atender_cliente_MEMORIA(void* cliente){
+void* atender_cliente(void* cliente){
 	int cliente_recibido = *(int*) cliente;
 	while(1){
 		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
 		switch (cod_op)
 		{
+        case INICIAR_PROCESO: //memoria recibe de kernel el proceso, recibe el path y lo chequea!!
+            break;
+        case ELIMINAR_PROCESO: //memoria elimina el proceso, kernel le pasa el path o el pid
+            break;
 		case CONEXION:
 			recibir_conexion(cliente_recibido);
 			break;
