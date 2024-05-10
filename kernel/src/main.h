@@ -42,11 +42,7 @@ typedef struct {
     uint32_t PID;
 } prcs_fin;
 
-
-extern config_struct config;
-extern t_list* pcb_list; // lista dinámica que contiene los PCB de los procesos creados
-extern uint32_t pid; // contador para determinar el PID de cada proceso creado
-
+typedef void (*fc_puntero)();
 
 void cargar_config_struct_KERNEL(t_config*);
 void* consola_kernel(void*);
@@ -62,4 +58,9 @@ void* buscar_pcb_por_pid(uint32_t);
 t_queue* obtener_cola(uint32_t);
 t_registros_cpu obtener_registros();
 
-uint32_t iniciar_proceso(void*);
+uint32_t iniciar_proceso(char*);
+
+fc_puntero obtener_algoritmo_planificacion();
+void algortimo_fifo();
+void algoritmo_rr();
+void algoritmo_vrr();

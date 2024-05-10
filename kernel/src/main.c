@@ -19,6 +19,7 @@ config_struct config;
 t_list *pcb_list;
 // t_dictionary *pcb_dictionary; // dictionario dinamica que contiene los PCB de los procesos creados
 uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
+fc_puntero algoritmo_planificacion;
 
 uint8_t PLANIFICACION_PAUSADA;
 prcs_fin FINALIZACION;
@@ -40,11 +41,14 @@ int main(int argc, char *argv[])
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
     t_config *archivo_config = iniciar_config("kernel.config");
     cargar_config_struct_KERNEL(archivo_config);
+    algoritmo_planificacion = obtener_algoritmo_planificacion();
     logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_DEBUG);
 
     // -- INICIALIZACION VARIABLES GLOBALES -- //
     pid = 1;
     PLANIFICACION_PAUSADA = 0;
+    pcb_list = list_create();
+    crear_colas();
 
     // -- INICIALIZACION SEMAFOROS -- //
     sem_init(&mutex_planificacion_pausada, 0, 1);
@@ -256,6 +260,7 @@ void *planificar_corto_plazo(void *archivo_config)
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
             sem_wait(&mutex_cola_ready);
                 // 1. acá dentro del mutex sólo se ejecutaría la función del algoritmo de planificación para sacar el proceso que corresponda de ready y pasarlo a RUNNING
+                algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
                 sleep(3);
                 log_info(logger, "estas en corto plazoo");
             sem_post(&mutex_cola_ready);
@@ -288,24 +293,19 @@ void *planificar_new_to_ready(void *archivo_config)
         if (!PLANIFICACION_PAUSADA)
         { // lectura
             sem_post(&mutex_planificacion_pausada);
-            sem_wait(&contador_grado_multiprogramacion);
-            sem_wait(&mutex_cola_ready);
-            log_info(logger, "estas en largo plazoo");
-            /*
-            // NEW -> READY
-            if (queue_size(cola_NEW) != 0){
-                sem_wait(&contador_grado_multiprogramacion)
+            if (!queue_is_empty(cola_NEW)){
+                sem_wait(&contador_grado_multiprogramacion);
+                sem_wait(&mutex_cola_ready);
                 queue_push(cola_READY, queue_peek(cola_NEW));
+                log_info(logger, "estas en largo plazoo");
+                sem_post(&mutex_cola_ready);
+                // TODO: cambiar estado del proceso a READY
                 queue_pop(cola_NEW);
+                sem_post(&orden_planificacion);
             }
-            */
-            sem_post(&mutex_cola_ready);
-            sem_post(&orden_planificacion);
         }
         else
-        {
             sem_post(&mutex_planificacion_pausada);
-        }
     }
 }
 
@@ -433,7 +433,7 @@ void destruir_colas()
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
-uint32_t iniciar_proceso(void *arg)
+uint32_t iniciar_proceso(char *path)
 {
 
     t_pcb *proceso = malloc(sizeof(t_pcb));
@@ -507,6 +507,33 @@ void* atender_cliente(void* cliente){
 			break;
 		}
 	}
+}
+
+
+// ALGORITMOS DE PLANIFICACION
+fc_puntero obtener_algoritmo_planificacion(){
+    if(strcmp(config.algoritmo_planificacion, "FIFO") == 0)
+        return &algortimo_fifo;
+    if(strcmp(config.algoritmo_planificacion, "RR") == 0)
+        return &algoritmo_rr;
+    if(strcmp(config.algoritmo_planificacion, "VRR") == 0)
+        return &algoritmo_vrr;
+}
+
+// cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
+void algortimo_fifo() {
+    log_info(logger, "estas en fifo");
+
+}
+
+// los algoritmos RR van a levantar un hilo que se encargará de, terminado el quantum, mandar a la cpu una interrupción para desalojar el proceso
+void algoritmo_rr(){
+    log_info(logger, "estas en rr");
+
+
+}
+void algoritmo_vrr(){
+    log_info(logger, "estas en vrr");
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
