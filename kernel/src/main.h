@@ -64,3 +64,4 @@ fc_puntero obtener_algoritmo_planificacion();
 void algortimo_fifo();
 void algoritmo_rr();
 void algoritmo_vrr();
+void* control_quantum(char*, int);

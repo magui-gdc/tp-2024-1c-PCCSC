@@ -30,12 +30,12 @@ t_queue *cola_BLOCKED;
 t_queue *cola_RUNNING;
 t_queue *cola_EXIT;
 
-sem_t mutex_planificacion_pausada, mutex_cola_ready, contador_grado_multiprogramacion, orden_planificacion;
+sem_t mutex_planificacion_pausada, mutex_cola_ready, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running;
+int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
 
 int main(int argc, char *argv[])
 {
 
-    int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
@@ -55,6 +55,7 @@ int main(int argc, char *argv[])
     sem_init(&mutex_cola_ready, 0, 1);
     sem_init(&orden_planificacion, 0, 0);
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
+    sem_init(&listo_proceso_en_running, 0, 0);
 
     decir_hola("Kernel");
 
@@ -262,13 +263,11 @@ void *planificar_corto_plazo(void *archivo_config)
         { // lectura
             sem_post(&mutex_planificacion_pausada);
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
-            sem_wait(&mutex_cola_ready);
-                // 1. acá dentro del mutex sólo se ejecutaría la función del algoritmo de planificación para sacar el proceso que corresponda de ready y pasarlo a RUNNING
-                algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
-                sleep(3);
-                log_info(logger, "estas en corto plazoo");
-            sem_post(&mutex_cola_ready);
-            sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
+            // 1. acá dentro del mutex sólo se ejecutaría la función del algoritmo de planificación para sacar el proceso que corresponda de ready y pasarlo a RUNNING
+            algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
+            sleep(3);
+            log_info(logger, "estas en corto plazoo");
+            sem_wait(&listo_proceso_en_running);
             // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos 
         }
@@ -527,31 +526,41 @@ fc_puntero obtener_algoritmo_planificacion(){
 // cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
 void algortimo_fifo() {
     log_info(logger, "estas en fifo");
+
+    sem_wait(&mutex_cola_ready);
     t_pcb* primer_elemento = queue_pop(cola_READY);
+    sem_post(&mutex_cola_ready);
+    sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
+
     queue_push(primer_elemento, cola_RUNNING);
 
-    free(primer_elemento);
+    //free(primer_elemento);
 }
 
 // los algoritmos RR van a levantar un hilo que se encargará de, terminado el quantum, mandar a la cpu una interrupción para desalojar el proceso
 void algoritmo_rr(){
     log_info(logger, "estas en rr");
-    int QUANTUM = (atoi)archivo_config.quantum;
+    int quantum = config.quantum;
     pthread_t hilo_RR; 
-    pthread_create(hilo_RR, NULL, control_quantum, ("RR", QUANTUM));
+    pthread_create(&hilo_RR, NULL, control_quantum, ("RR", quantum));
+    pthread_detach(hilo_RR);
 
 }
 void algoritmo_vrr(){
     log_info(logger, "estas en vrr");
 }
 
-void* control_quantum(void* tipo, void* quantum){
+void* control_quantum(char* tipo_algoritmo, int duracion_quantum){
     while(1){
-        char* tipo_algoritmo = (char*)tipo;
-        int duracion_quantum = *(int*)quantum;
         int quantum_por_ciclo = 3; //ACA LO DECLARO, en el config dice cuanto dura cada quantum en unidades de tiempo. 2000 -> 2sg
+        // TODO: Preguntar si es RR o VRR, si es VRR consultar si hay algún proceso en la cola de pendientes de VRR con quantum menor.
+        sem_wait(&mutex_cola_ready);
         t_pcb* primer_elemento = queue_pop(cola_READY);
+        sem_post(&mutex_cola_ready);
+        sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
+        
         queue_push(primer_elemento, cola_RUNNING);
+        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU
         for(int i = quantum_por_ciclo, i<=0, i--){
             if(primer_elemento->quantum > 0){
                 primer_elemento->quantum --;    
