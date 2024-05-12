@@ -48,6 +48,7 @@ void* atender_cliente(void* cliente){
 		switch (cod_op)
 		{
         case INICIAR_PROCESO: //memoria recibe de kernel el proceso, recibe el path y lo chequea!!
+            t_list* path_recibido = recibir_paquete(cliente_recibido);
             break;
         case ELIMINAR_PROCESO: //memoria elimina el proceso, kernel le pasa el path o el pid
             break;

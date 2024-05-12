@@ -170,8 +170,12 @@ void *consola_kernel(void *archivo_config)
             {
                 char *path = tokens[1];
                 uint8_t pid_proceso_iniciado;
+                t_paquete* paquete_proceso = crear_paquete();
                 if (strlen(path) != 0 && path != NULL)
-                {
+                {   
+                    agregar_a_paquete(paquete_proceso, path, sizeof(path));
+                    paquete_proceso->codigo_operacion = INICIAR_PROCESO;
+                    enviar_paquete(paquete_proceso, conexion_memoria);
                     // solicitar creacion a memoria de proceso
                     // si se crea proceso, iniciar largo plazo
 
@@ -523,17 +527,45 @@ fc_puntero obtener_algoritmo_planificacion(){
 // cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
 void algortimo_fifo() {
     log_info(logger, "estas en fifo");
+    t_pcb* primer_elemento = queue_pop(cola_READY);
+    queue_push(primer_elemento, cola_RUNNING);
 
+    free(primer_elemento);
 }
 
 // los algoritmos RR van a levantar un hilo que se encargará de, terminado el quantum, mandar a la cpu una interrupción para desalojar el proceso
 void algoritmo_rr(){
     log_info(logger, "estas en rr");
-
+    int QUANTUM = (atoi)archivo_config.quantum;
+    pthread_t hilo_RR; 
+    pthread_create(hilo_RR, NULL, control_quantum, ("RR", QUANTUM));
 
 }
 void algoritmo_vrr(){
     log_info(logger, "estas en vrr");
 }
 
+void* control_quantum(void* tipo, void* quantum){
+    while(1){
+        char* tipo_algoritmo = (char*)tipo;
+        int duracion_quantum = *(int*)quantum;
+        int quantum_por_ciclo = 3; //ACA LO DECLARO, en el config dice cuanto dura cada quantum en unidades de tiempo. 2000 -> 2sg
+        t_pcb* primer_elemento = queue_pop(cola_READY);
+        queue_push(primer_elemento, cola_RUNNING);
+        for(int i = quantum_por_ciclo, i<=0, i--){
+            if(primer_elemento->quantum > 0){
+                primer_elemento->quantum --;    
+            } else if (primer_elemento->quantum == 0) {
+                // EXIT?
+            } else {
+                //INTERRUPCION
+
+            }
+            
+
+            sleep(duracion_quantum);
+        }
+        free(primer_elemento);
+    }
+}
 //////////////////////////////////////////////////////////////////////////////////////////////////////
