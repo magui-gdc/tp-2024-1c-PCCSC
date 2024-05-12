@@ -29,6 +29,7 @@ t_queue *cola_READY;
 t_queue *cola_BLOCKED;
 t_queue *cola_RUNNING;
 t_queue *cola_EXIT;
+t_queue *cola_READY_VRR;
 
 sem_t mutex_planificacion_pausada, mutex_cola_ready, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running;
 int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
@@ -268,8 +269,12 @@ void *planificar_corto_plazo(void *archivo_config)
             sleep(3);
             log_info(logger, "estas en corto plazoo");
             sem_wait(&listo_proceso_en_running);
-            // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
+            // 2. se manda el proceso seleccionado a CPU a través del puerto 
+            // supongamos que pasaron dos tiempos y se devolvio proceso: lo desalojas y ponele que lo mandas a cola bloqueado por I/O
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos 
+            /*
+            PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO => ver si se tiene que delegar en otro hilo que haga el mediano plazo
+            */
         }
         else
             sem_post(&mutex_planificacion_pausada);
@@ -519,8 +524,11 @@ fc_puntero obtener_algoritmo_planificacion(){
         return &algortimo_fifo;
     if(strcmp(config.algoritmo_planificacion, "RR") == 0)
         return &algoritmo_rr;
-    if(strcmp(config.algoritmo_planificacion, "VRR") == 0)
+    if(strcmp(config.algoritmo_planificacion, "VRR") == 0){
+        cola_READY_VRR = queue_create();
         return &algoritmo_vrr;
+        
+    }
 }
 
 // cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
@@ -548,33 +556,48 @@ void algoritmo_rr(){
 }
 void algoritmo_vrr(){
     log_info(logger, "estas en vrr");
+    int quantum = config.quantum;
+    pthread_t hilo_RR; 
+    pthread_create(&hilo_RR, NULL, control_quantum, ("VRR", quantum));
+    pthread_detach(hilo_RR);
+
 }
 
 void* control_quantum(char* tipo_algoritmo, int duracion_quantum){
-    while(1){
-        int quantum_por_ciclo = 3; //ACA LO DECLARO, en el config dice cuanto dura cada quantum en unidades de tiempo. 2000 -> 2sg
         // TODO: Preguntar si es RR o VRR, si es VRR consultar si hay algún proceso en la cola de pendientes de VRR con quantum menor.
-        sem_wait(&mutex_cola_ready);
-        t_pcb* primer_elemento = queue_pop(cola_READY);
-        sem_post(&mutex_cola_ready);
-        sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
-        
-        queue_push(primer_elemento, cola_RUNNING);
-        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU
-        for(int i = quantum_por_ciclo, i<=0, i--){
-            if(primer_elemento->quantum > 0){
-                primer_elemento->quantum --;    
-            } else if (primer_elemento->quantum == 0) {
-                // EXIT?
-            } else {
-                //INTERRUPCION
-
-            }
-            
-
-            sleep(duracion_quantum);
+        t_pcb* primer_elemento;
+        int quantum_por_ciclo;
+        if(strcmp(tipo_algoritmo, "VRR") == 0 && !queue_is_empty(cola_READY_VRR)){
+            primer_elemento = queue_pop(cola_READY_VRR); // solo la modificamos desde aca!!
+            quantum_por_ciclo = primer_elemento->quantum;
+        } else {
+            sem_wait(&mutex_cola_ready);
+            primer_elemento = queue_pop(cola_READY);
+            sem_post(&mutex_cola_ready); 
+            quantum_por_ciclo = duracion_quantum / 1000; // ciclos de a un tiempo de kernel (1 seg) por vez
+        // si es VRR: te fijas si en la cola de READY_VRR hay algun proceso y tomas el quantum de su PCB.         
         }
-        free(primer_elemento);
-    }
+
+        queue_push(primer_elemento, cola_RUNNING); // mandas proceso a RUNNING
+        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU
+        sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
+
+        // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
+        // 2. si se acabo el quantum, manda INTERRUPCION A CPU
+        for(int i = quantum_por_ciclo, i<=0, i--){ 
+            sleep(1);
+            // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
+            if(obtener_cola(primer_elemento) != cola_RUNNING){ // si ya no esta en running, se desalojo el proceso por otra cosa que no sea QUANTUM por RR o VRR
+                if(strcmp(tipo_algoritmo, "VRR") == 0){
+                 /* A.VRR) 
+                    1. cargar el quantum restante (i) en el PCB del proceso
+                    2. mandar el proceso a la cola READY_VRR
+                   */
+                }
+                pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
+            }
+        }
+        // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
+        // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////
