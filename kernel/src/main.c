@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include "main.h"
+#include "monitores.h"
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
@@ -24,19 +25,21 @@ fc_puntero algoritmo_planificacion;
 uint8_t PLANIFICACION_PAUSADA;
 prcs_fin FINALIZACION;
 
+/* se crean monitores en su lugar!
 t_queue *cola_NEW;
 t_queue *cola_READY;
 t_queue *cola_BLOCKED;
 t_queue *cola_RUNNING;
 t_queue *cola_EXIT;
+*/
 t_queue *cola_READY_VRR;
 
-sem_t mutex_planificacion_pausada, mutex_cola_ready, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running;
+sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running;
 int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
 
 int main(int argc, char *argv[])
 {
-
+    // ------------ DECLARACION HILOS HIJOS PRINCIPALES ------------ //
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
@@ -49,11 +52,10 @@ int main(int argc, char *argv[])
     pid = 1;
     PLANIFICACION_PAUSADA = 0;
     pcb_list = list_create();
-    crear_colas();
+    crear_monitores(); // crear_colas();
 
     // -- INICIALIZACION SEMAFOROS -- //
     sem_init(&mutex_planificacion_pausada, 0, 1);
-    sem_init(&mutex_cola_ready, 0, 1);
     sem_init(&orden_planificacion, 0, 0);
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
     sem_init(&listo_proceso_en_running, 0, 0);
@@ -111,10 +113,12 @@ int main(int argc, char *argv[])
     pthread_join(thread_planificador_corto_plazo, NULL);
     pthread_join(thread_planificador_largo_plazo, NULL);
 
-    sem_destroy(&mutex_cola_ready);
-    sem_destroy(&mutex_cola_ready);
+    destruir_monitores();
+
+    sem_destroy(&mutex_planificacion_pausada);
     sem_destroy(&contador_grado_multiprogramacion);
     sem_destroy(&orden_planificacion);
+    sem_destroy(&listo_proceso_en_running);
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -301,14 +305,14 @@ void *planificar_new_to_ready(void *archivo_config)
         if (!PLANIFICACION_PAUSADA)
         { // lectura
             sem_post(&mutex_planificacion_pausada);
-            if (!queue_is_empty(cola_NEW)){
+            if (!mqueue_is_empty(monitor_NEW)){
                 sem_wait(&contador_grado_multiprogramacion);
-                sem_wait(&mutex_cola_ready);
-                queue_push(cola_READY, queue_peek(cola_NEW));
+                t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+                primer_elemento->estado = READY;
+                mqueue_push(monitor_READY, primer_elemento);
+                // TODO: Log cambio de estado
+                // TODO: ingreso a READYs
                 log_info(logger, "estas en largo plazoo");
-                sem_post(&mutex_cola_ready);
-                // TODO: cambiar estado del proceso a READY
-                queue_pop(cola_NEW);
                 sem_post(&orden_planificacion);
             }
         }
@@ -378,87 +382,33 @@ void *planificar_all_to_exit(void *args)
     return NULL;
 }
 
-void crear_colas()
-{
-    cola_NEW = queue_create();
-    cola_READY = queue_create();
-    cola_BLOCKED = queue_create();
-    cola_RUNNING = queue_create();
-    cola_EXIT = queue_create();
-}
-
-void *buscar_pcb_por_pid(uint32_t pid_buscado)
-{
-    bool comparar_pid(void *elemento)
-    {
-        t_pcb *pcb = (t_pcb *)elemento;
-        return pcb->pid == pid_buscado;
-    }
-    return list_find(pcb_list, comparar_pid); // si no funciona pasarlo como puntero a funcion
-}
-
-t_queue *obtener_cola(uint32_t pid_buscado)
-{
-    // t_pcb *pcb = dictionary_get(pcb_dictionary, pid_buscado);
-    t_pcb *pcb_encontrado = (t_pcb *)buscar_pcb_por_pid(pid_buscado);
-    switch (pcb_encontrado->estado)
-    {
-    case NEW:
-        return cola_NEW;
-    case READY:
-        return cola_READY;
-    case BLOCKED:
-        return cola_BLOCKED;
-    case RUNNING:
-        return cola_RUNNING;
-    case EXIT:
-        return cola_EXIT;
-    default:
-        return 0; // y mensaje de error
-    }
-    return NULL;
-}
-
-void destruir_colas()
-{ // ver si es mejor usar queue_destroy_and_destroy_elements o esto, es opcional el parametro ese??
-    queue_clean(cola_NEW);
-    queue_destroy(cola_NEW);
-    queue_clean(cola_READY);
-    queue_destroy(cola_READY);
-    queue_clean(cola_BLOCKED);
-    queue_destroy(cola_BLOCKED);
-    queue_clean(cola_RUNNING);
-    queue_destroy(cola_RUNNING);
-    queue_clean(cola_EXIT);
-    queue_destroy(cola_EXIT);
-    free(cola_NEW);
-    free(cola_READY);
-    free(cola_BLOCKED);
-    free(cola_RUNNING);
-    free(cola_EXIT);
-}
-
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
-uint32_t iniciar_proceso(char *path)
-{
+uint32_t iniciar_proceso(char *path){
 
     t_pcb *proceso = malloc(sizeof(t_pcb));
 
     proceso->estado = NEW;
-    proceso->quantum = 0;
+    proceso->quantum = config.quantum;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
     // proceso->registros = obtener_registros(/*arg? registros cpu???*/);
 
+    mqueue_push(monitor_NEW, proceso);
+
+    char* nuevo_proceso = (char*)malloc(128);
+    sprintf(nuevo_proceso, "Se crea el proceso %d en NEW", proceso->pid);
+    log_info(logger, "%s", nuevo_proceso);
+    free(nuevo_proceso);
+
     pid++;
 
-    queue_push(cola_NEW, proceso);
     // dictionary_put(pcb_dictionary, pid, proceso);
     list_add(pcb_list, proceso);
     return proceso->pid;
 }
+
 /*
 t_registros_cpu obtener_registros(){
     t_registros_cpu registros;
@@ -475,9 +425,8 @@ t_registros_cpu obtener_registros(){
     registros.DI = &malloc(sizeof(uint32_t));
 }
 */
+
 /*
-
-
 void finalizar_proceso(char* pid_buscado){
 
     struct {
@@ -529,18 +478,25 @@ fc_puntero obtener_algoritmo_planificacion(){
         return &algoritmo_vrr;
         
     }
+    return NULL;
 }
 
 // cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
 void algortimo_fifo() {
     log_info(logger, "estas en fifo");
 
-    sem_wait(&mutex_cola_ready);
-    t_pcb* primer_elemento = queue_pop(cola_READY);
-    sem_post(&mutex_cola_ready);
-    sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
+    t_pcb* primer_elemento = mqueue_pop(monitor_READY);
+    primer_elemento->estado = RUNNING; 
 
-    queue_push(primer_elemento, cola_RUNNING);
+    // --------- TODO: DELEGAR ESTO EN UNA FUNCION PARA LOGS PORQUE SE LLAMA A ESTE LOG DESDE DISTINTAS PARTES DEL CÓDIGO
+    char* cambio_estado = (char*)malloc(128);
+    sprintf(cambio_estado, "PID: %d - Estado Anterior: READY - Estado Actual: RUNNING", primer_elemento->pid);
+    log_info(logger, "%s", cambio_estado);
+    // --------- TODO: DELEGAR ESTO EN UNA FUNCION PARA LOGS PORQUE SE LLAMA A ESTE LOG DESDE DISTINTAS PARTES DEL CÓDIGO
+
+    mqueue_push(monitor_RUNNING, primer_elemento);
+    sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
+    sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
 
     //free(primer_elemento);
 }
@@ -548,48 +504,46 @@ void algortimo_fifo() {
 // los algoritmos RR van a levantar un hilo que se encargará de, terminado el quantum, mandar a la cpu una interrupción para desalojar el proceso
 void algoritmo_rr(){
     log_info(logger, "estas en rr");
-    int quantum = config.quantum;
-    pthread_t hilo_RR; 
-    pthread_create(&hilo_RR, NULL, control_quantum, ("RR", quantum));
+    pthread_t hilo_RR;
+    char* algoritmo = "RR";
+    pthread_create(&hilo_RR, NULL, control_quantum, algoritmo);
     pthread_detach(hilo_RR);
 
 }
 void algoritmo_vrr(){
     log_info(logger, "estas en vrr");
-    int quantum = config.quantum;
     pthread_t hilo_RR; 
-    pthread_create(&hilo_RR, NULL, control_quantum, ("VRR", quantum));
+    char* algoritmo = "VRR";
+    pthread_create(&hilo_RR, NULL, control_quantum, algoritmo);
     pthread_detach(hilo_RR);
 
 }
 
-void* control_quantum(char* tipo_algoritmo, int duracion_quantum){
-        // TODO: Preguntar si es RR o VRR, si es VRR consultar si hay algún proceso en la cola de pendientes de VRR con quantum menor.
+void* control_quantum(void* tipo_algoritmo){
+        int duracion_quantum = config.quantum;
         t_pcb* primer_elemento;
         int quantum_por_ciclo;
-        if(strcmp(tipo_algoritmo, "VRR") == 0 && !queue_is_empty(cola_READY_VRR)){
+        // Pregunta si es VRR y si hay algún proceso en la cola de pendientes de VRR (con quantum menor).
+        if(strcmp((char*)tipo_algoritmo, "VRR") == 0 && !queue_is_empty(cola_READY_VRR)){
             primer_elemento = queue_pop(cola_READY_VRR); // solo la modificamos desde aca!!
-            quantum_por_ciclo = primer_elemento->quantum;
+            quantum_por_ciclo = primer_elemento->quantum; // toma el quantum restante de su PCB
         } else {
-            sem_wait(&mutex_cola_ready);
-            primer_elemento = queue_pop(cola_READY);
-            sem_post(&mutex_cola_ready); 
-            quantum_por_ciclo = duracion_quantum / 1000; // ciclos de a un tiempo de kernel (1 seg) por vez
-        // si es VRR: te fijas si en la cola de READY_VRR hay algun proceso y tomas el quantum de su PCB.         
+            primer_elemento = mqueue_pop(monitor_READY);
+            quantum_por_ciclo = duracion_quantum / 1000; 
         }
 
-        queue_push(primer_elemento, cola_RUNNING); // mandas proceso a RUNNING
-        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU
+        mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
+        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
         sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
 
         // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
-        // 2. si se acabo el quantum, manda INTERRUPCION A CPU
-        for(int i = quantum_por_ciclo, i<=0, i--){ 
+        // 2. si se acabo el quantum, manda INTERRUPCION A CPU        
+        for(int i = quantum_por_ciclo; i<=0; i--){ 
             sleep(1);
             // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
-            if(obtener_cola(primer_elemento) != cola_RUNNING){ // si ya no esta en running, se desalojo el proceso por otra cosa que no sea QUANTUM por RR o VRR
+            if(primer_elemento->estado != RUNNING){ // si ya no esta en running (se desalojó el proceso por otro motivo que NO es FIN DE QUANTUM)
                 if(strcmp(tipo_algoritmo, "VRR") == 0){
-                 /* A.VRR) 
+                 /* A.VRR)
                     1. cargar el quantum restante (i) en el PCB del proceso
                     2. mandar el proceso a la cola READY_VRR
                    */
@@ -599,5 +553,6 @@ void* control_quantum(char* tipo_algoritmo, int duracion_quantum){
         }
         // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
         // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
+    return NULL;
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////
