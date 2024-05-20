@@ -167,8 +167,7 @@ void *consola_kernel(void *archivo_config)
                 char *path = tokens[1];
                 if (strlen(path) != 0 && path != NULL)
                 {
-                    // comprobar existencia de archivo en ruta relativa
-                    // ejecutar_script(path);
+                    consola_interactiva(path);
                     printf("path ingresado (ejecutar_script): %s\n", path);
                 }
             } // INICIAR_PROCESO /carpetaProcesos/proceso1
@@ -257,6 +256,24 @@ void *consola_kernel(void *archivo_config)
     }
 
     return NULL;
+}
+
+void consola_interactiva(char* ruta_archivo){
+    /*char* instruccion = malloc(50);
+    char datoLeido;
+    FILE* script = fopen(ruta_archivo, "rb+");
+    if (script == NULL){
+        log_error(logger, "No se encontró ningún archivo con el nombre indicado...");
+    } else {
+        while (!feof(script))
+        {
+            fread(&datoLeido, sizeof(char), sizeof(datoLeido), script);
+            if(datoLeido == "\n"){
+                printf("INSTRUCCION LEIDA %s", instruccion);
+                consola_kernel(instruccion);
+            }
+        }
+    }*/
 }
 
 void *planificar_corto_plazo(void *archivo_config)
