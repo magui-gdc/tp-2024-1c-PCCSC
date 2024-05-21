@@ -3,6 +3,7 @@
 #include <utils/hello.h>
 #include "main.h"
 #include "monitores.h"
+#include "logs.h"
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
@@ -285,16 +286,19 @@ void *planificar_corto_plazo(void *archivo_config)
         { // lectura
             sem_post(&mutex_planificacion_pausada);
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
-            // 1. acá dentro del mutex sólo se ejecutaría la función del algoritmo de planificación para sacar el proceso que corresponda de ready y pasarlo a RUNNING
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
             sleep(3);
             log_info(logger, "estas en corto plazoo");
             sem_wait(&listo_proceso_en_running);
-            // 2. se manda el proceso seleccionado a CPU a través del puerto 
-            // supongamos que pasaron dos tiempos y se devolvio proceso: lo desalojas y ponele que lo mandas a cola bloqueado por I/O
-            // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos 
+            // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
+
+            // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
+
             /*
-            PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO => ver si se tiene que delegar en otro hilo que haga el mediano plazo
+            A. PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO (recurso o I/O no disponible)=> ver si se tiene que delegar en otro hilo que haga el mediano plazo
+            B. PUEDE PASAR QUE FINALICE EL PROCESO => mandarlo a cola EXIT
+            // TODO: para casos A Y B: sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY --> así deja de estar en memoria y continúa con la ejecución de otros procesos
+            C. PUEDE PASAR QUE SE DESALOJE POR FIN DE QUANTUM: en dicho caso, se vuelve a pasar el proceso al FIN de la cola READY
             */
         }
         else
@@ -410,14 +414,10 @@ uint32_t iniciar_proceso(char *path){
     proceso->quantum = config.quantum;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
-    // proceso->registros = obtener_registros(/*arg? registros cpu???*/);
 
     mqueue_push(monitor_NEW, proceso);
 
-    char* nuevo_proceso = (char*)malloc(128);
-    sprintf(nuevo_proceso, "Se crea el proceso %d en NEW", proceso->pid);
-    log_info(logger, "%s", nuevo_proceso);
-    free(nuevo_proceso);
+    log_iniciar_proceso(logger, proceso->pid);
 
     pid++;
 
@@ -425,23 +425,6 @@ uint32_t iniciar_proceso(char *path){
     list_add(pcb_list, proceso);
     return proceso->pid;
 }
-
-/*
-t_registros_cpu obtener_registros(){
-    t_registros_cpu registros;
-    registros.PC = &malloc(sizeof(uint32_t));
-    registros.AX = &malloc(sizeof(uint8_t));
-    registros.BX = &malloc(sizeof(uint8_t));
-    registros.CX = &malloc(sizeof(uint8_t));
-    registros.DX = &malloc(sizeof(uint8_t));
-    registros.EAX = &malloc(sizeof(uint32_t));
-    registros.EBX = &malloc(sizeof(uint32_t));
-    registros.ECX = &malloc(sizeof(uint32_t));
-    registros.EDX = &malloc(sizeof(uint32_t));
-    registros.SI = &malloc(sizeof(uint32_t));
-    registros.DI = &malloc(sizeof(uint32_t));
-}
-*/
 
 /*
 void finalizar_proceso(char* pid_buscado){
@@ -504,18 +487,10 @@ void algortimo_fifo() {
 
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
     primer_elemento->estado = RUNNING; 
-
-    // --------- TODO: DELEGAR ESTO EN UNA FUNCION PARA LOGS PORQUE SE LLAMA A ESTE LOG DESDE DISTINTAS PARTES DEL CÓDIGO
-    char* cambio_estado = (char*)malloc(128);
-    sprintf(cambio_estado, "PID: %d - Estado Anterior: READY - Estado Actual: RUNNING", primer_elemento->pid);
-    log_info(logger, "%s", cambio_estado);
-    // --------- TODO: DELEGAR ESTO EN UNA FUNCION PARA LOGS PORQUE SE LLAMA A ESTE LOG DESDE DISTINTAS PARTES DEL CÓDIGO
-
     mqueue_push(monitor_RUNNING, primer_elemento);
+    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", estado_proceso_strings[primer_elemento->estado]);
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
-    sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
 
-    //free(primer_elemento);
 }
 
 // los algoritmos RR van a levantar un hilo que se encargará de, terminado el quantum, mandar a la cpu una interrupción para desalojar el proceso
@@ -527,6 +502,7 @@ void algoritmo_rr(){
     pthread_detach(hilo_RR);
 
 }
+
 void algoritmo_vrr(){
     log_info(logger, "estas en vrr");
     pthread_t hilo_RR; 
@@ -549,9 +525,12 @@ void* control_quantum(void* tipo_algoritmo){
             quantum_por_ciclo = duracion_quantum / 1000; 
         }
 
+        primer_elemento->estado = RUNNING; 
+
+
         mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
+        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", estado_proceso_strings[primer_elemento->estado]);
         sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
-        sem_post(&contador_grado_multiprogramacion); // libera un espacio en READY
 
         // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
         // 2. si se acabo el quantum, manda INTERRUPCION A CPU        
@@ -570,6 +549,7 @@ void* control_quantum(void* tipo_algoritmo){
         }
         // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
         // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
+        // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
     return NULL;
 }
 //////////////////////////////////////////////////////////////////////////////////////////////////////
