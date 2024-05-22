@@ -1,7 +1,7 @@
 #include <utils/utilsServer.h>
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
-#include <utils/config.h>
+#include <utils/buffer.h>
 
 /*
 IP_MEMORIA=127.0.0.1

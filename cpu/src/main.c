@@ -55,6 +55,19 @@ int main(int argc, char* argv[]) {
             recibir_conexion(cliente_kernel);
             break;
         case EJECUTAR_PROCESO:
+            t_sbuffer *buffer_dispatch = malloc(sizeof(t_sbuffer));
+            recv(cliente_kernel, &(buffer_dispatch->size), sizeof(uint32_t), 0);
+            buffer_dispatch->stream = malloc(buffer_dispatch->size);
+            recv(cliente_kernel, buffer_dispatch->stream, buffer_dispatch->size, 0);
+            
+            uint32_t pid_proceso = buffer_read_uint32(buffer_dispatch);
+            t_registros_cpu contexto_proceso;
+            buffer_read_registros(buffer_dispatch, &(contexto_proceso));
+            char* mensaje = (char*)malloc(128);
+            sprintf(mensaje, "Recibi para ejecutar el proceso %d, junto a PC %d", pid_proceso, contexto_proceso.PC);
+            log_info(logger, "%s", mensaje);
+            free(mensaje);
+
             // función que ejecuta el proceso por ciclos de instrucción: necesidad de algún BUCLE que controle los cuatro pasos
             // hasta finalización, interrupción, bloqueo o error durante la ejecución del proceso
             /*
@@ -115,6 +128,9 @@ void* recibir_interrupcion(void* conexion){
         int cod_op = recibir_operacion(interrupcion_kernel);
         switch (cod_op)
         {
+        case CONEXION:
+            recibir_conexion(interrupcion_kernel);
+            break;
         case INTERRUPCION:
             // acá recibe la interrupción y la agrega en la estructura PIC (evaluar si es una lista con struct donde se guarden valores como el PID del proceso, la acción a tomar, y si se debe agregar ordenado según algún bit de prioridad)
             break;

@@ -291,7 +291,7 @@ void *planificar_corto_plazo(void *archivo_config)
             log_info(logger, "estas en corto plazoo");
             sem_wait(&listo_proceso_en_running);
             // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
-
+            enviar_proceso_a_cpu();
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
 
             /*
@@ -466,6 +466,23 @@ void* atender_cliente(void* cliente){
 	}
 }
 
+// ENVIAR PCB POR DISPATCH
+void enviar_proceso_a_cpu(){
+    t_pcb* proceso = mqueue_peek(monitor_RUNNING); // lo tomo sin extraerlo
+    
+    // creo un buffer para pasar los datos a cpu
+    t_sbuffer* buffer_dispatch = buffer_create(
+        sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
+        + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+    );
+
+    buffer_add_uint32(buffer_dispatch,proceso->pid);
+    buffer_add_registros(buffer_dispatch, &(proceso->registros));
+
+    // una vez que tengo el buffer, lo envío a CPU!!
+    cargar_paquete(conexion_cpu_dispatch, EJECUTAR_PROCESO, buffer_dispatch); // TODO: NO LO ESTÁ RECIBIENDO CPU, REVISAAAAR!!
+    log_info(logger, "envio paquete a cpu");
+}
 
 // ALGORITMOS DE PLANIFICACION
 fc_puntero obtener_algoritmo_planificacion(){
@@ -488,7 +505,7 @@ void algortimo_fifo() {
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
     primer_elemento->estado = RUNNING; 
     mqueue_push(monitor_RUNNING, primer_elemento);
-    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", estado_proceso_strings[primer_elemento->estado]);
+    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
 }
@@ -529,7 +546,7 @@ void* control_quantum(void* tipo_algoritmo){
 
 
         mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
-        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", estado_proceso_strings[primer_elemento->estado]);
+        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
         sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
         // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo

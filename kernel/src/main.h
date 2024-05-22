@@ -1,8 +1,8 @@
 #include <utils/utilsCliente.h>
 #include <utils/utilsServer.h>
 #include <commons/config.h>
-#include <utils/config.h>
 #include <commons/string.h>
+#include <utils/buffer.h>
 
 // ---------- CONSTANTES ---------- //
 const char *estado_proceso_strings[] = {
@@ -61,6 +61,7 @@ void* planificar_all_to_exit(void*);
 // ---------  --------- //
 uint32_t iniciar_proceso(char*);
 void consola_interactiva(char*);
+void enviar_proceso_a_cpu();
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();
