@@ -12,7 +12,8 @@ typedef enum
 	WAIT, // Instrucción WAIT cpu - kernel
 	SIGNAL, // Instruccion SIGNAL cpu - kernel
 	INSTRUCCION_EXIT, // Instrucción EXIT cpu - kernel
-	INTERRUPCION // kernel - cpu
+	INTERRUPCION, // kernel - cpu
+	LEER_PROCESO // cpu - memoria
 }op_code;
 
 #endif

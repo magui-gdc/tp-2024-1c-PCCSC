@@ -6,10 +6,10 @@
 
 config_struct config;
 t_registros_cpu registros; 
+int conexion_memoria;
 
 int main(int argc, char* argv[]) {
     
-    int conexion_memoria;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
     pthread_t thread_interrupt; //, thread_dispatch;
@@ -44,8 +44,8 @@ int main(int argc, char* argv[]) {
     // NO hace falta un hilo para DISPATCH porque sólo KERNEL manda solicitudes a CPU, de forma SECUENCIAL (GRADO MULTIPROCESAMIENTO = 1)
     //pthread_create(&thread_dispatch, NULL, recibir_IO, &socket_servidor_dispatch); 
     //pthread_join(thread_dispatch, NULL);
-    int cliente_kernel;  
-    while((cliente_kernel = esperar_cliente(socket_servidor_dispatch)) != -1){
+    int cliente_kernel = esperar_cliente(socket_servidor_dispatch); 
+    while(1){
         int cod_op = recibir_operacion(cliente_kernel);
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
         // (ciclo de instrucciones: en el último paso se consulta por la cola de las interrupciones para tratarlas en caso de que se lo requiera)
@@ -55,18 +55,31 @@ int main(int argc, char* argv[]) {
             recibir_conexion(cliente_kernel);
             break;
         case EJECUTAR_PROCESO:
-            t_sbuffer *buffer_dispatch = malloc(sizeof(t_sbuffer));
-            recv(cliente_kernel, &(buffer_dispatch->size), sizeof(uint32_t), 0);
-            buffer_dispatch->stream = malloc(buffer_dispatch->size);
-            recv(cliente_kernel, buffer_dispatch->stream, buffer_dispatch->size, 0);
+            log_info(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
-            uint32_t pid_proceso = buffer_read_uint32(buffer_dispatch);
-            t_registros_cpu contexto_proceso;
-            buffer_read_registros(buffer_dispatch, &(contexto_proceso));
+            // guarda BUFFER del paquete enviado
+            t_sbuffer *buffer_dispatch = malloc(sizeof(t_sbuffer));
+            buffer_dispatch->offset = 0; // ESTA LINEAAA ES MUY IMPORTANTE!!!!!!!!!!!
+            recv(cliente_kernel, &(buffer_dispatch->size), sizeof(uint32_t), MSG_WAITALL);
+            buffer_dispatch->stream = malloc(buffer_dispatch->size);
+            recv(cliente_kernel, buffer_dispatch->stream, buffer_dispatch->size, MSG_WAITALL);
+            
+            // guarda datos del buffer (contexto de proceso)
+            uint32_t pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
+            buffer_read_registros(buffer_dispatch, &(registros)); // cargo contexto del proceso en los registros de la CPU
+
+            // a modo de log: CAMBIAR DESPUÉS
             char* mensaje = (char*)malloc(128);
-            sprintf(mensaje, "Recibi para ejecutar el proceso %d, junto a PC %d", pid_proceso, contexto_proceso.PC);
+            sprintf(mensaje, "Recibi para ejecutar el proceso %u, junto a PC %u", pid_proceso, registros.PC);
             log_info(logger, "%s", mensaje);
             free(mensaje);
+
+            // comienzo ciclo instrucciones
+            //while(1){
+            fetch_ciclo_instruccion(pid_proceso); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
+
+            //}
+
 
             // función que ejecuta el proceso por ciclos de instrucción: necesidad de algún BUCLE que controle los cuatro pasos
             // hasta finalización, interrupción, bloqueo o error durante la ejecución del proceso
@@ -81,6 +94,7 @@ int main(int argc, char* argv[]) {
 
                 IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
             */
+            buffer_destroy(buffer_dispatch);
             break;
         case -1:
             log_error(logger, "cliente desconectado");
@@ -120,6 +134,20 @@ void inicializar_registros(){
     registros.EDX = 0;
     registros.SI = 0;
     registros.DI = 0;
+}
+
+void fetch_ciclo_instruccion(uint32_t pid_proceso){
+    // provisoriamente, le paso PID y PC a memoria, con codigo de operación ESCRIBIR_PROCESO
+    t_sbuffer *buffer = buffer_create(
+        sizeof(uint32_t) * 2 // PID + PC
+    );
+
+    buffer_add_uint32(buffer,pid_proceso);
+    buffer_add_uint32(buffer, registros.PC);
+    
+    cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
+    log_info(logger, "envio orden lectura a memoria");
+    //recv() // ESPERA RTA DE MEMORIA!
 }
 
 void* recibir_interrupcion(void* conexion){

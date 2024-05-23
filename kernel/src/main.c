@@ -287,13 +287,12 @@ void *planificar_corto_plazo(void *archivo_config)
             sem_post(&mutex_planificacion_pausada);
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
-            sleep(3);
             log_info(logger, "estas en corto plazoo");
             sem_wait(&listo_proceso_en_running);
             // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
             enviar_proceso_a_cpu();
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
-
+            int cod_op = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
             /*
             A. PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO (recurso o I/O no disponible)=> ver si se tiene que delegar en otro hilo que haga el mediano plazo
             B. PUEDE PASAR QUE FINALICE EL PROCESO => mandarlo a cola EXIT
@@ -469,18 +468,17 @@ void* atender_cliente(void* cliente){
 // ENVIAR PCB POR DISPATCH
 void enviar_proceso_a_cpu(){
     t_pcb* proceso = mqueue_peek(monitor_RUNNING); // lo tomo sin extraerlo
-    
     // creo un buffer para pasar los datos a cpu
     t_sbuffer* buffer_dispatch = buffer_create(
         sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
         + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
     );
 
-    buffer_add_uint32(buffer_dispatch,proceso->pid);
+    buffer_add_uint32(buffer_dispatch, proceso->pid);
     buffer_add_registros(buffer_dispatch, &(proceso->registros));
 
     // una vez que tengo el buffer, lo envío a CPU!!
-    cargar_paquete(conexion_cpu_dispatch, EJECUTAR_PROCESO, buffer_dispatch); // TODO: NO LO ESTÁ RECIBIENDO CPU, REVISAAAAR!!
+    cargar_paquete(conexion_cpu_dispatch, EJECUTAR_PROCESO, buffer_dispatch); 
     log_info(logger, "envio paquete a cpu");
 }
 

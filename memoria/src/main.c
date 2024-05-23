@@ -53,6 +53,26 @@ void* atender_cliente(void* cliente){
             break;
         case ELIMINAR_PROCESO: //memoria elimina el proceso, kernel le pasa el path o el pid
             break;
+        case LEER_PROCESO:
+            // guarda BUFFER del paquete enviado
+            t_sbuffer *buffer_lectura = malloc(sizeof(t_sbuffer));
+            buffer_lectura->offset = 0; // ESTA LINEAAA ES MUY IMPORTANT!!!!!!!!!!!
+            recv(cliente_recibido, &(buffer_lectura->size), sizeof(uint32_t), MSG_WAITALL);
+            buffer_lectura->stream = malloc(buffer_lectura->size);
+            recv(cliente_recibido, buffer_lectura->stream, buffer_lectura->size, MSG_WAITALL);
+            
+            // guarda datos del buffer (PID proceso + PC para buscar prox instruccion)
+            uint32_t pid_proceso = buffer_read_uint32(buffer_lectura); // guardo PID del proceso del cual se quiere leer
+            uint32_t pc_proceso = buffer_read_uint32(buffer_lectura); // guardo PC para elegir la prox INSTRUCCION a ejecutar
+
+            char* mensaje = (char*)malloc(128);
+            sprintf(mensaje, "Recibi para leer del proceso %u, la prox INST desde PC %u", pid_proceso, pc_proceso);
+            log_info(logger, "%s", mensaje);
+            free(mensaje);
+            // TODO: leer desde el proceso la próxima instruccion!!!!
+            // TODO: send() a cpu la próxima línea con sus operandos (en caso de tener)
+            buffer_destroy(buffer_lectura);
+            break;
 		case CONEXION:
 			recibir_conexion(cliente_recibido);
 			break;

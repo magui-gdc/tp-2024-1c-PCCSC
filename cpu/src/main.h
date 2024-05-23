@@ -29,3 +29,6 @@ void cargar_config_struct_CPU(t_config*);
 void inicializar_registros();
 
 void* recibir_interrupcion(void*);
+
+// ---------------- FCS. CICLO INSTRUCCION ----------------
+void fetch_ciclo_instruccion(uint32_t pid);
