@@ -56,3 +56,6 @@ void buffer_read_registros(t_sbuffer *buffer, t_registros_cpu *registros);
 // La idea es que primero se cree el buffer con buffer_create; que luego se le carguen datos a ese buffet con las funciones buffer_add_*; y por último que se ejecute esta función
 // La misma se encarga de liberar las estructuras dinámicas luego de enviar la información!
 void cargar_paquete(int socket, op_code codigo_operacion, t_sbuffer *buffer);
+
+// carga buffer a partir de lo que reciba a partir de un socket
+t_sbuffer* cargar_buffer(int socket);

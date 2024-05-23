@@ -7,7 +7,7 @@ typedef enum
 	PAQUETE,
 	INICIAR_PROCESO, // kernel - memoria
 	ELIMINAR_PROCESO, // kernel - memoria
-	INSTRUCCION,
+	INSTRUCCION, // memoria - cpu
 	EJECUTAR_PROCESO, // kernel - cpu
 	WAIT, // Instrucción WAIT cpu - kernel
 	SIGNAL, // Instruccion SIGNAL cpu - kernel

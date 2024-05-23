@@ -1,16 +1,6 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <utils/hello.h>
-#include <pthread.h>
-#include "main.h"
+#include "instrucciones.h"
 
-typedef enum {
-    _UINT8,
-    _UINT32
-} tiposDeDato;
-
-extern config_struct config;
-extern t_registros_cpu registros; 
+// TODO: JNZ e IO_GEN_SLEEP
 
 int contar_digitos(int num) {
     if (num == 0) return 1; 
@@ -27,37 +17,37 @@ char* intToCadena(int num, char* array, int longitud){
 }
 
 tiposDeDato obtenerTipo(char* registro){
-    if(strcmp(registro, 'AX') == 0){
+    if(strcmp(registro, "AX") == 0){
         return _UINT8;
     }
-    if(strcmp(registro, 'BX') == 0){
+    if(strcmp(registro, "BX") == 0){
         return _UINT8;
     }
-    if(strcmp(registro, 'CX') == 0){
+    if(strcmp(registro, "CX") == 0){
         return _UINT8;
     }
-    if(strcmp(registro, 'DX') == 0){
+    if(strcmp(registro, "DX") == 0){
         return _UINT8;
     }
-    if(strcmp(registro, 'EAX') == 0){
+    if(strcmp(registro, "EAX") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'EBX') == 0){
+    if(strcmp(registro, "EBX") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'ECX') == 0){
+    if(strcmp(registro, "ECX") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'EDX') == 0){
+    if(strcmp(registro, "EDX") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'SI') == 0){
+    if(strcmp(registro, "SI") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'DI') == 0){
+    if(strcmp(registro, "DI") == 0){
         return _UINT32;
     }
-    if(strcmp(registro, 'PC') == 0){
+    if(strcmp(registro, "PC") == 0){
         return _UINT32;
     } 
 }
@@ -66,42 +56,42 @@ void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** da
     *dato_8bits = NULL;
     *dato_32bits = NULL;
 
-    if(strcmp(registro, 'AX') == 0){
-        *dato_8bits = &(registros->AX);
+    if(strcmp(registro, "AX") == 0){
+        *dato_8bits = &(registros.AX);
         /*Este es un puntero doble a uint8_t. 
         En la función obtenerDireccionMemoria, dato_8bits es un puntero doble que apunta
          a un puntero uint8_t. Esto significa que dato_8bits puede almacenar la dirección
          de memoria de un puntero uint8_t.*/
     }
-    if(strcmp(registro, 'BX') == 0){
-        *dato_8bits = &(registros->BX);
+    if(strcmp(registro, "BX") == 0){
+        *dato_8bits = &(registros.BX);
     }
-    if(strcmp(registro, 'CX') == 0){
-        *dato_8bits = &(registros->CX);
+    if(strcmp(registro, "CX") == 0){
+        *dato_8bits = &(registros.CX);
     }
-    if(strcmp(registro, 'DX') == 0){
-        *dato_8bits = &(registros->DX);
+    if(strcmp(registro, "DX") == 0){
+        *dato_8bits = &(registros.DX);
     }
-    if(strcmp(registro, 'EAX') == 0){
-        *dato_32bits = &(registros->EAX);
+    if(strcmp(registro, "EAX") == 0){
+        *dato_32bits = &(registros.EAX);
     }
-    if(strcmp(registro, 'EBX') == 0){
-        *dato_32bits = &(registros->EBX);
+    if(strcmp(registro, "EBX") == 0){
+        *dato_32bits = &(registros.EBX);
     }
-    if(strcmp(registro, 'ECX') == 0){
-       *dato_32bits = &(registros->ECX);
+    if(strcmp(registro, "ECX") == 0){
+       *dato_32bits = &(registros.ECX);
     }
-    if(strcmp(registro, 'EDX') == 0){
-        *dato_32bits = &(registros->EDX);
+    if(strcmp(registro, "EDX") == 0){
+        *dato_32bits = &(registros.EDX);
     }
-    if(strcmp(registro, 'SI') == 0){
-        *dato_32bits = &(registros->SI);
+    if(strcmp(registro, "SI") == 0){
+        *dato_32bits = &(registros.SI);
     }
-    if(strcmp(registro, 'DI') == 0){
-        *dato_32bits = &(registros->DI);
+    if(strcmp(registro, "DI") == 0){
+        *dato_32bits = &(registros.DI);
     }
-    if(strcmp(registro, 'PC') == 0){
-        *dato_32bits = &(registros->PC);
+    if(strcmp(registro, "PC") == 0){
+        *dato_32bits = &(registros.PC);
     } 
 }
 
@@ -146,6 +136,8 @@ void MOV_IN (char* registroDato, char* registroDireccion){
         uint32_t** dir_32bits;
 
         int longitud;
+        
+        char* array;
 
         obtenerDireccionMemoria(registroDireccion, dir_8bits, dir_32bits);
         
@@ -155,15 +147,15 @@ void MOV_IN (char* registroDato, char* registroDireccion){
             case _UINT8:
                 dato_8bits = **dir_8bits;
                 longitud = contar_digitos((int)dato_8bits);
-                char* array = (char*)malloc((longitud + 1) * sizeof(char));
-                transformar_en_char_array(dato_8bits, array, longitud);
+                array = (char*)malloc((longitud + 1) * sizeof(char));
+                intToCadena(dato_8bits, array, longitud);
                 set(registroDato, array);
                 break;
             case _UINT32:
                 dato_32bits = **dir_32bits;
                 longitud = contar_digitos((int)dato_32bits);
-                char* array = (char*)malloc((longitud + 1) * sizeof(char));
-                transformar_en_char_array(dato_32bits, array, longitud);
+                array = (char*)malloc((longitud + 1) * sizeof(char));
+                intToCadena(dato_32bits, array, longitud);
                 set(registroDato, array);
                 break;
             default:
@@ -211,7 +203,7 @@ void SUM (char* registroDireccion, char* registroOrigen){
         longitudSuma = contar_digitos(suma);
         char* arraySuma = (char*)malloc((longitudSuma + 1) * sizeof(char));
 
-        transformar_en_char_array(suma, arraySuma, longitudSuma);
+        intToCadena(suma, arraySuma, longitudSuma);
 
         set(registroDireccion, arraySuma);
 
@@ -252,9 +244,48 @@ void SUB (char* registroDireccion, char* registroOrigen){
         longitudResta = contar_digitos(resta);
         char* arrayResta = (char*)malloc((longitudResta + 1) * sizeof(char));
 
-        transformar_en_char_array(resta, arrayResta, longitudResta);
+        intToCadena(resta, arrayResta, longitudResta);
 
         set(registroDireccion, arrayResta);
 
     }    
+}
+
+
+
+void decode_instruccion(t_sbuffer* buffer_instruccion, t_log* logger) {
+    uint32_t length;
+    char* leido = buffer_read_string(buffer_instruccion, length);
+
+    char *mensaje = (char *)malloc(128);
+    sprintf(mensaje, "ESTAMOS LEYENDO LA SIGUIENTE LINEA DE INSTRUCCION %S", leido);
+    log_info(logger, "%s", mensaje);
+    free(mensaje);
+
+    char **tokens = string_split(leido, " ");
+    char *comando = tokens[0];
+    // ------------------------------- EXECUTE ---------------------------------- //
+    if (comando != NULL){
+        if (strcmp(comando, "SET") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            set(parametro1, parametro2);
+        } else 
+        if (strcmp(comando, "SUM") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            SUM(parametro1, parametro2);
+        } else if (strcmp(comando, "SUB") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            SUB(parametro1, parametro2);
+        } else if (strcmp(comando, "EXIT") == 0){
+            //exit_proceso(); // TODO deberia recibir socket de kernel para devolver proceso
+        } 
+        // TODO: SEGUIR
+    }
+
+    string_array_destroy(tokens);
+    buffer_destroy(buffer_instruccion);
+    free(leido);
 }

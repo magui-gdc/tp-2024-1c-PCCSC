@@ -1,7 +1,6 @@
 #include <utils/utilsServer.h>
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
-#include <utils/buffer.h>
 
 /*
 IP_MEMORIA=127.0.0.1
@@ -31,4 +30,5 @@ void inicializar_registros();
 void* recibir_interrupcion(void*);
 
 // ---------------- FCS. CICLO INSTRUCCION ----------------
-void fetch_ciclo_instruccion(uint32_t pid);
+void ciclo_instruccion(uint32_t pid);
+void decode_ciclo_instruccion();

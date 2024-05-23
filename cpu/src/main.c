@@ -3,10 +3,12 @@
 #include <utils/hello.h>
 #include <pthread.h>
 #include "main.h"
+#include "instrucciones.h"
 
 config_struct config;
 t_registros_cpu registros; 
 int conexion_memoria;
+int seguir_ejecucion = 1;
 
 int main(int argc, char* argv[]) {
     
@@ -30,6 +32,7 @@ int main(int argc, char* argv[]) {
     inicializar_registros();
     log_info(logger, config.puerto_escucha_dispatch);
     log_info(logger, "Server CPU DISPATCH");
+
 
     // conexion interrupt
     int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
@@ -55,14 +58,11 @@ int main(int argc, char* argv[]) {
             recibir_conexion(cliente_kernel);
             break;
         case EJECUTAR_PROCESO:
+            seguir_ejecucion = 1;
             log_info(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
-            t_sbuffer *buffer_dispatch = malloc(sizeof(t_sbuffer));
-            buffer_dispatch->offset = 0; // ESTA LINEAAA ES MUY IMPORTANTE!!!!!!!!!!!
-            recv(cliente_kernel, &(buffer_dispatch->size), sizeof(uint32_t), MSG_WAITALL);
-            buffer_dispatch->stream = malloc(buffer_dispatch->size);
-            recv(cliente_kernel, buffer_dispatch->stream, buffer_dispatch->size, MSG_WAITALL);
+            t_sbuffer *buffer_dispatch = cargar_buffer(cliente_kernel);
             
             // guarda datos del buffer (contexto de proceso)
             uint32_t pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
@@ -75,10 +75,11 @@ int main(int argc, char* argv[]) {
             free(mensaje);
 
             // comienzo ciclo instrucciones
-            //while(1){
-            fetch_ciclo_instruccion(pid_proceso); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
-
-            //}
+            while(seguir_ejecucion){
+            ciclo_instruccion(pid_proceso); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
+            }
+            buffer_destroy(buffer_dispatch);
+            break;
 
 
             // función que ejecuta el proceso por ciclos de instrucción: necesidad de algún BUCLE que controle los cuatro pasos
@@ -94,8 +95,7 @@ int main(int argc, char* argv[]) {
 
                 IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
             */
-            buffer_destroy(buffer_dispatch);
-            break;
+
         case -1:
             log_error(logger, "cliente desconectado");
             break;
@@ -136,7 +136,8 @@ void inicializar_registros(){
     registros.DI = 0;
 }
 
-void fetch_ciclo_instruccion(uint32_t pid_proceso){
+void ciclo_instruccion(uint32_t pid_proceso){
+    // ---------------------- ETAPA FETCH ---------------------- //
     // provisoriamente, le paso PID y PC a memoria, con codigo de operación ESCRIBIR_PROCESO
     t_sbuffer *buffer = buffer_create(
         sizeof(uint32_t) * 2 // PID + PC
@@ -147,8 +148,20 @@ void fetch_ciclo_instruccion(uint32_t pid_proceso){
     
     cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
     log_info(logger, "envio orden lectura a memoria");
-    //recv() // ESPERA RTA DE MEMORIA!
+    // TODO: CPU ESPERA POR DETERMINADO TIEMPO A MEMORIA, y sino sigue ¿?
+    if(recibir_operacion(conexion_memoria) == INSTRUCCION){
+        t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
+        // ---------------------- ETAPA DECODE ---------------------- //
+        decode_instruccion(buffer_de_instruccion, logger); // ---------------------- EXECUTE ------------------- //
+        // chequear INTERRUPCCION: deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando
+        // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
+        registros.PC++;
+    } else {
+        // TODO: PROBLEMAS
+    }
 }
+
+
 
 void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;

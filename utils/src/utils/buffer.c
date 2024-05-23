@@ -124,3 +124,26 @@ void cargar_paquete(int socket, op_code codigo_operacion, t_sbuffer *buffer){
     buffer_destroy(buffer);
     free(paquete);
 }
+
+
+t_sbuffer* cargar_buffer(int socket) {
+    t_sbuffer *buffer = malloc(sizeof(t_sbuffer));
+    if (buffer == NULL) {
+        perror("Error al asignar memoria para buffer");
+        return NULL;
+    }
+
+    buffer->offset = 0;
+
+    recv(socket, &(buffer->size), sizeof(uint32_t), MSG_WAITALL);
+    buffer->stream = malloc(buffer->size);
+    if (buffer->stream == NULL) {
+        perror("Error al asignar memoria para buffer->stream");
+        free(buffer);
+        return NULL;
+    }
+
+    recv(socket, buffer->stream, buffer->size, MSG_WAITALL);
+
+    return buffer;
+}
