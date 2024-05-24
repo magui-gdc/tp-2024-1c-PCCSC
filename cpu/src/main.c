@@ -7,8 +7,9 @@
 
 config_struct config;
 t_registros_cpu registros; 
-int conexion_memoria;
-int seguir_ejecucion = 1;
+int conexion_memoria; // SOCKET
+int seguir_ejecucion = 1, proceso_instruccion_exit = 0; //FLAGS
+uint32_t pid_proceso; // PID PROCESO EN EJECUCIÓN
 
 int main(int argc, char* argv[]) {
     
@@ -52,20 +53,19 @@ int main(int argc, char* argv[]) {
         int cod_op = recibir_operacion(cliente_kernel);
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
         // (ciclo de instrucciones: en el último paso se consulta por la cola de las interrupciones para tratarlas en caso de que se lo requiera)
-        switch (cod_op)
-        {
+        switch (cod_op){
         case CONEXION:
             recibir_conexion(cliente_kernel);
             break;
         case EJECUTAR_PROCESO:
-            seguir_ejecucion = 1;
+            seguir_ejecucion = 1, proceso_instruccion_exit = 0;
             log_info(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
             t_sbuffer *buffer_dispatch = cargar_buffer(cliente_kernel);
             
             // guarda datos del buffer (contexto de proceso)
-            uint32_t pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
+            pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
             buffer_read_registros(buffer_dispatch, &(registros)); // cargo contexto del proceso en los registros de la CPU
 
             // a modo de log: CAMBIAR DESPUÉS
@@ -76,7 +76,7 @@ int main(int argc, char* argv[]) {
 
             // comienzo ciclo instrucciones
             while(seguir_ejecucion){
-            ciclo_instruccion(pid_proceso); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
+                ciclo_instruccion(cliente_kernel); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
             }
             buffer_destroy(buffer_dispatch);
             break;
@@ -136,9 +136,9 @@ void inicializar_registros(){
     registros.DI = 0;
 }
 
-void ciclo_instruccion(uint32_t pid_proceso){
+void ciclo_instruccion(int conexion_kernel){
     // ---------------------- ETAPA FETCH ---------------------- //
-    // provisoriamente, le paso PID y PC a memoria, con codigo de operación ESCRIBIR_PROCESO
+    // provisoriamente, le pasamos PID y PC a memoria, con codigo de operación LEER_PROCESO
     t_sbuffer *buffer = buffer_create(
         sizeof(uint32_t) * 2 // PID + PC
     );
@@ -148,12 +148,20 @@ void ciclo_instruccion(uint32_t pid_proceso){
     
     cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
     log_info(logger, "envio orden lectura a memoria");
+
     // TODO: CPU ESPERA POR DETERMINADO TIEMPO A MEMORIA, y sino sigue ¿?
     if(recibir_operacion(conexion_memoria) == INSTRUCCION){
         t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
-        // ---------------------- ETAPA DECODE ---------------------- //
-        decode_instruccion(buffer_de_instruccion, logger); // ---------------------- EXECUTE ------------------- //
-        // chequear INTERRUPCCION: deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando
+        uint32_t length;
+        char* leido = buffer_read_string(buffer_de_instruccion, &length);
+
+        // ---------------------- ETAPA DECODE  ---------------------- //
+        decode_instruccion(leido, conexion_kernel); 
+        
+        free(leido);
+        buffer_destroy(buffer_de_instruccion);
+        // ---------------------- CHECK INTERRUPT  ---------------------- //
+        // chequear INTERRUPCCION: deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
         // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
         registros.PC++;
     } else {
@@ -161,7 +169,54 @@ void ciclo_instruccion(uint32_t pid_proceso){
     }
 }
 
+void decode_instruccion(char* leido, int conexion_kernel) {
 
+    char *mensaje = (char *)malloc(128);
+    sprintf(mensaje, "ESTAMOS LEYENDO LA SIGUIENTE LINEA DE INSTRUCCION %s", leido);
+    log_info(logger, "%s", mensaje);
+    free(mensaje);
+
+    char **tokens = string_split(leido, " ");
+    char *comando = tokens[0];
+    // ------------------------------- ETAPA EXECUTE ---------------------------------- //
+    if (comando != NULL){
+        if (strcmp(comando, "SET") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            set(parametro1, parametro2);
+        } else 
+        if (strcmp(comando, "SUM") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            SUM(parametro1, parametro2);
+        } else if (strcmp(comando, "SUB") == 0){
+            char *parametro1 = tokens[1]; 
+            char *parametro2 = tokens[2]; 
+            SUB(parametro1, parametro2);
+        } else if (strcmp(comando, "EXIT") == 0){
+            seguir_ejecucion = 0;
+            proceso_instruccion_exit = 1;
+            //registros.PC++; // de todas formas, si sale por acá, mucho no importa este valor pero bueno...........
+            desalojo_proceso(conexion_kernel, EXIT_PROCESO);
+            // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
+        } 
+        // TODO: SEGUIR
+    }
+    string_array_destroy(tokens);
+}
+
+void desalojo_proceso(int conexion_kernel, op_code mensaje_desalojo){
+    // 1. Cargo buffer con contexto de ejecución del proceso en el momento del desalojo
+    t_sbuffer *buffer_contexto_proceso = buffer_create(
+        sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
+        + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+    );
+
+    buffer_add_uint32(buffer_contexto_proceso, pid_proceso);
+    buffer_add_registros(buffer_contexto_proceso, &(registros));
+    // 2. Envió el contexto de ejecución del proceso y el motivo de desalojo (código de operación del paquete) a KERNEL
+    cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_contexto_proceso);
+}
 
 void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;

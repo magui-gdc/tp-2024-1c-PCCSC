@@ -9,11 +9,12 @@ typedef enum
 	ELIMINAR_PROCESO, // kernel - memoria
 	INSTRUCCION, // memoria - cpu
 	EJECUTAR_PROCESO, // kernel - cpu
-	WAIT, // Instrucción WAIT cpu - kernel
-	SIGNAL, // Instruccion SIGNAL cpu - kernel
-	INSTRUCCION_EXIT, // Instrucción EXIT cpu - kernel
 	INTERRUPCION, // kernel - cpu
-	LEER_PROCESO // cpu - memoria
+	LEER_PROCESO, // cpu - memoria
+	EXIT_PROCESO, // cpu - kernel
+	WAIT_RECURSO, // cpu - kernel
+	SIGNAL_RECURSO, // cpu - kernel 
+	FIN_QUANTUM // kernel - cpuInterrupt
 }op_code;
 
 #endif

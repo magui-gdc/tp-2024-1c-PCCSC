@@ -2,15 +2,6 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
 
-/*
-IP_MEMORIA=127.0.0.1
-PUERTO_MEMORIA=8002
-PUERTO_ESCUCHA_DISPATCH=8006
-PUERTO_ESCUCHA_INTERRUPT=8007
-CANTIDAD_ENTRADAS_TLB=32
-ALGORITMO_TLB=FIFO
-*/
-
 typedef struct
 {
     char* ip_memoria;
@@ -30,5 +21,6 @@ void inicializar_registros();
 void* recibir_interrupcion(void*);
 
 // ---------------- FCS. CICLO INSTRUCCION ----------------
-void ciclo_instruccion(uint32_t pid);
-void decode_ciclo_instruccion();
+void ciclo_instruccion(int conexion_kernel);
+void decode_instruccion(char* leido, int conexion_kernel);
+void desalojo_proceso(int conexion_kernel, op_code mensaje_desalojo);

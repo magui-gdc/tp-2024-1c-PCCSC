@@ -14,6 +14,7 @@ char* intToCadena(int num, char* array, int longitud){
         array[i] = (num % 10) + '0';
         num /= 10;
     }
+    //TODO: falta return
 }
 
 tiposDeDato obtenerTipo(char* registro){
@@ -100,13 +101,12 @@ void set(char* registro, char* valor){
     
     uint8_t cast_8bits;
     uint32_t cast_32bits;
-    uint8_t** dir_8bits;
+    uint8_t** dir_8bits; // problemas con la inicialización, VER.
     uint32_t** dir_32bits;
 
     obtenerDireccionMemoria(registro, dir_8bits, dir_32bits);
 
-    switch (obtenerTipo(registro))
-    {
+    switch (obtenerTipo(registro)){
         case _UINT8:
             cast_8bits = (uint8_t)valor_numerico;
             **dir_8bits = cast_8bits;
@@ -249,43 +249,4 @@ void SUB (char* registroDireccion, char* registroOrigen){
         set(registroDireccion, arrayResta);
 
     }    
-}
-
-
-
-void decode_instruccion(t_sbuffer* buffer_instruccion, t_log* logger) {
-    uint32_t length;
-    char* leido = buffer_read_string(buffer_instruccion, length);
-
-    char *mensaje = (char *)malloc(128);
-    sprintf(mensaje, "ESTAMOS LEYENDO LA SIGUIENTE LINEA DE INSTRUCCION %S", leido);
-    log_info(logger, "%s", mensaje);
-    free(mensaje);
-
-    char **tokens = string_split(leido, " ");
-    char *comando = tokens[0];
-    // ------------------------------- EXECUTE ---------------------------------- //
-    if (comando != NULL){
-        if (strcmp(comando, "SET") == 0){
-            char *parametro1 = tokens[1]; 
-            char *parametro2 = tokens[2]; 
-            set(parametro1, parametro2);
-        } else 
-        if (strcmp(comando, "SUM") == 0){
-            char *parametro1 = tokens[1]; 
-            char *parametro2 = tokens[2]; 
-            SUM(parametro1, parametro2);
-        } else if (strcmp(comando, "SUB") == 0){
-            char *parametro1 = tokens[1]; 
-            char *parametro2 = tokens[2]; 
-            SUB(parametro1, parametro2);
-        } else if (strcmp(comando, "EXIT") == 0){
-            //exit_proceso(); // TODO deberia recibir socket de kernel para devolver proceso
-        } 
-        // TODO: SEGUIR
-    }
-
-    string_array_destroy(tokens);
-    buffer_destroy(buffer_instruccion);
-    free(leido);
 }

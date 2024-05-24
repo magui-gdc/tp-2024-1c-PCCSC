@@ -286,13 +286,35 @@ void *planificar_corto_plazo(void *archivo_config)
         { // lectura
             sem_post(&mutex_planificacion_pausada);
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
+
+            // 1. selecciona próximo proceso a ejecutar
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
             log_info(logger, "estas en corto plazoo");
             sem_wait(&listo_proceso_en_running);
+
             // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
             enviar_proceso_a_cpu();
+
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
-            int cod_op = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
+            int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
+            
+            switch (mensaje_desalojo){
+            case EXIT_PROCESO:
+                // TODO: se podría hacer una función genérica que sea recuperar contexto, que cargue el buffer y devuelva ya los datos 'procesados', ya que siempre va a devolver PID + registros y dichos valores se deberían actualizar en PCB según cada caso?
+                // luego de eso, se saca de cola RUNNING, se cambia su estado a EXIT, se lo agrega a cola EXIT (el planificador de largo plazo se va a encargar de liberar recursos)
+                // luego de liberar espacio en memoria => sem_post(&contador_grado_multiprogramacion): se haría en plani largo plazo EXIT
+                break;
+            
+            case WAIT_RECURSO:
+                break;
+
+            case SIGNAL_RECURSO:
+                break;
+
+            case FIN_QUANTUM:
+                break;
+            // (...)
+            }
             /*
             A. PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO (recurso o I/O no disponible)=> ver si se tiene que delegar en otro hilo que haga el mediano plazo
             B. PUEDE PASAR QUE FINALICE EL PROCESO => mandarlo a cola EXIT

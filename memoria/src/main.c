@@ -59,12 +59,8 @@ void *atender_cliente(void *cliente)
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
             break;
         case LEER_PROCESO:
-            // TODO: PASARLO A UNA FC DENTRO DE BUFFER.C guarda BUFFER del paquete enviado
-            t_sbuffer *buffer_lectura = malloc(sizeof(t_sbuffer));
-            buffer_lectura->offset = 0; // ESTA LINEAAA ES MUY IMPORTANT!!!!!!!!!!!
-            recv(cliente_recibido, &(buffer_lectura->size), sizeof(uint32_t), MSG_WAITALL);
-            buffer_lectura->stream = malloc(buffer_lectura->size);
-            recv(cliente_recibido, buffer_lectura->stream, buffer_lectura->size, MSG_WAITALL);
+            // guarda BUFFER del paquete enviado
+            t_sbuffer *buffer_lectura = cargar_buffer(cliente_recibido);
 
             // guarda datos del buffer (PID proceso + PC para buscar prox instruccion)
             uint32_t pid_proceso = buffer_read_uint32(buffer_lectura); // guardo PID del proceso del cual se quiere leer
@@ -77,40 +73,42 @@ void *atender_cliente(void *cliente)
 
             // TODO: leer desde el proceso la próxima instruccion!!!!
             char nombreArchivo[256];
-            snprintf(nombreArchivo, sizeof(nombreArchivo), "%d.txt", pid_proceso);
+            snprintf(nombreArchivo, sizeof(nombreArchivo), "%d.txt", pid_proceso); // PROVISORIO!
 
-            int lineaActual = 0;
+            int lineaActual = 0, lee_instruccion = 0;
 
-            char *instruccion = malloc(50);
+            char *instruccion = NULL;
+            size_t len = 0;
             FILE *script = fopen(nombreArchivo, "rb");
 
             if (script == NULL)
                 log_error(logger, "No se encontro ningun archivo con el nombre indicado...");
-            else{
-                while (fgets(instruccion, 50, script) != NULL){
-                    lineaActual++;
+            else {
+                while (getline(&instruccion, &len, script) != -1){
                     if (lineaActual == pc_proceso){
                         char *mensaje = (char *)malloc(128);
                         sprintf(mensaje, "INSTRUCCION LEIDA EN LINEA %d: %s", pc_proceso, instruccion);
                         log_info(logger, "%s", mensaje);
                         free(mensaje);
+                        lee_instruccion = 1;
                         break;
                     }
+                    lineaActual++;
                 }
                 fclose(script);
-                // TODO: QUE PASA SI LA ULTIMA INST DEL PROCESO NO FUE EXIT Y QUIERE SEGUIR EJECUTANDO
+                
+                if(lee_instruccion){
+                    t_sbuffer *buffer_instruccion = buffer_create(
+                        strlen(instruccion)
+                    );
+
+                    buffer_add_string(buffer_instruccion, strlen(instruccion), instruccion);
+                    cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
+
+                    buffer_destroy(buffer_lectura);
+                } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
+                free(instruccion);
             }
-
-            // TODO: send() a cpu la proxima linea con sus operandos (en caso de tener)
-            t_sbuffer *buffer_instruccion = buffer_create(
-                sizeof(instruccion)
-            );
-
-            buffer_add_string(buffer_instruccion, sizeof(instruccion), instruccion);
-            cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
-
-            free(instruccion);
-            buffer_destroy(buffer_lectura);
             break;
         case CONEXION:
             recibir_conexion(cliente_recibido);
