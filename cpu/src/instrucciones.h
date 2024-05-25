@@ -3,7 +3,9 @@
 #include <utils/hello.h>
 #include <commons/string.h>
 #include <commons/log.h>
+#include <string.h>
 #include <math.h>
+#include <utils/config.h>
 
 typedef enum {
     _UINT8,

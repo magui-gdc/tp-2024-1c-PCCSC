@@ -23,5 +23,5 @@ void* recibir_interrupcion(void*);
 
 // ---------------- FCS. CICLO INSTRUCCION ----------------
 void ciclo_instruccion(int conexion_kernel);
-void decode_instruccion(char* leido, int conexion_kernel);
-void desalojo_proceso(t_sbuffer* buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo);
+void ejecutar_instruccion(char* leido, int conexion_kernel);
+void desalojo_proceso(t_sbuffer** buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo);

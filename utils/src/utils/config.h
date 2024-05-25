@@ -3,6 +3,8 @@
 #include<stdint.h>
 #include<commons/config.h>
 
+#ifndef REGISTROS_CPU
+#define REGISTROS_CPU
 typedef struct {
     uint32_t PC;
     // registros numéricos de propósito general
@@ -20,3 +22,4 @@ typedef struct {
 } t_registros_cpu;
 
 t_config* iniciar_config(char*);
+#endif

@@ -46,13 +46,10 @@ int main(int argc, char* argv[]) {
     pthread_detach(thread_interrupt);
 
     // NO hace falta un hilo para DISPATCH porque sólo KERNEL manda solicitudes a CPU, de forma SECUENCIAL (GRADO MULTIPROCESAMIENTO = 1)
-    //pthread_create(&thread_dispatch, NULL, recibir_IO, &socket_servidor_dispatch); 
-    //pthread_join(thread_dispatch, NULL);
     int cliente_kernel = esperar_cliente(socket_servidor_dispatch); 
     while(1){
         int cod_op = recibir_operacion(cliente_kernel);
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
-        // (ciclo de instrucciones: en el último paso se consulta por la cola de las interrupciones para tratarlas en caso de que se lo requiera)
         switch (cod_op){
         case CONEXION:
             recibir_conexion(cliente_kernel);
@@ -76,25 +73,10 @@ int main(int argc, char* argv[]) {
 
             // comienzo ciclo instrucciones
             while(seguir_ejecucion){
-                ciclo_instruccion(cliente_kernel); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si esedato debería ir en el buffer y en el pcb de kernel)
+                ciclo_instruccion(cliente_kernel); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si ese dato debería ir en el buffer y en el pcb de kernel)
             }
             buffer_destroy(buffer_dispatch);
             break;
-
-
-            // función que ejecuta el proceso por ciclos de instrucción: necesidad de algún BUCLE que controle los cuatro pasos
-            // hasta finalización, interrupción, bloqueo o error durante la ejecución del proceso
-            /*
-                1. FETCH: búsqueda de la sgte instrucción en MEMORIA (por valor del Program Counter pasado por el socket)
-                2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
-                3. EXECUTE: ejecutar la instrucción (se podría hacer un ENUM de todas las instrucciones posibles y por cada ENUM una función que determine qué acción 
-                            se realiza y cómo se actualiza el contexto del PRC pasado por socket. Considerar que ciertas INSTRUCCIONES deben mandar por puerto DISPATCH 
-                            a KERNEL ciertas solicitudes, como por ejemplo, WAIT-SIGNAL-ACCEDER A I/O-EXIT ..., y deberán esperar la respuesta de KERNEL para seguir avanzando
-                4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR)
-                Si no hay necesidad de abandonar la ejecución del proceso, una vez actualizado el contexto, suma 1 al Program Counter 
-
-                IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
-            */
 
         case -1:
             log_error(logger, "cliente desconectado");
@@ -138,6 +120,7 @@ void inicializar_registros(){
 
 void ciclo_instruccion(int conexion_kernel){
     // ---------------------- ETAPA FETCH ---------------------- //
+    // 1. FETCH: búsqueda de la sgte instrucción en MEMORIA (por valor del Program Counter pasado por el socket)
     // provisoriamente, le pasamos PID y PC a memoria, con codigo de operación LEER_PROCESO
     t_sbuffer *buffer = buffer_create(
         sizeof(uint32_t) * 2 // PID + PC
@@ -155,22 +138,28 @@ void ciclo_instruccion(int conexion_kernel){
         uint32_t length;
         char* leido = buffer_read_string(buffer_de_instruccion, &length);
 
-        // ---------------------- ETAPA DECODE  ---------------------- //
-        decode_instruccion(leido, conexion_kernel); 
+        // ---------------------- ETAPA DECODE + EXECUTE  ---------------------- //
+        // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
+        ejecutar_instruccion(leido, conexion_kernel); 
         
         free(leido);
         buffer_destroy(buffer_de_instruccion);
         // ---------------------- CHECK INTERRUPT  ---------------------- //
-        // chequear INTERRUPCCION: deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
+        // 4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR) 
+        // deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
         // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
+
+        // IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
+        // Si no hay necesidad de abandonar la ejecución del proceso, una vez actualizado el contexto, suma 1 al Program Counter 
         registros.PC++;
     } else {
         // TODO: PROBLEMAS
     }
 }
 
-void decode_instruccion(char* leido, int conexion_kernel) {
-
+void ejecutar_instruccion(char* leido, int conexion_kernel) {
+    // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
+    // TODO: MMU en caso de traducción dire. lógica a dire. física
     char *mensaje = (char *)malloc(128);
     sprintf(mensaje, "ESTAMOS LEYENDO LA SIGUIENTE LINEA DE INSTRUCCION %s", leido);
     log_info(logger, "%s", mensaje);
@@ -179,6 +168,7 @@ void decode_instruccion(char* leido, int conexion_kernel) {
     char **tokens = string_split(leido, " ");
     char *comando = tokens[0];
     // ------------------------------- ETAPA EXECUTE ---------------------------------- //
+    // 3. EXECUTE: ejecutar la instrucción, actualizando su contexto.  Considerar que ciertas INSTRUCCIONES deben mandar por puerto DISPATCH a KERNEL ciertas solicitudes, como por ejemplo, WAIT-SIGNAL-ACCEDER A I/O-EXIT ..., y deberán esperar la respuesta de KERNEL para seguir avanzando
     if (comando != NULL){
         if (strcmp(comando, "SET") == 0){
             char *parametro1 = tokens[1]; 
@@ -196,8 +186,8 @@ void decode_instruccion(char* leido, int conexion_kernel) {
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
             proceso_instruccion_exit = 1;
-            //registros.PC++; // de todas formas, si sale por acá, mucho no importa este valor pero bueno...........
-            desalojo_proceso(NULL, conexion_kernel, EXIT_PROCESO);
+            t_sbuffer *buffer_desalojo = NULL;
+            desalojo_proceso(&buffer_desalojo, conexion_kernel, EXIT_PROCESO);
             // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
         } 
         // TODO: SEGUIR
@@ -206,18 +196,18 @@ void decode_instruccion(char* leido, int conexion_kernel) {
 }
 
 // solo carga el contexto y retorna proceso (si tuvo que cargar otro valor antes suponemos que ya venía cargado en el buffer que se pasa por parámetro)
-void desalojo_proceso(t_sbuffer *buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo){
+void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo){
     // O. Creo buffer si no vino cargado => si vino cargado, se supone que ya tiene el size que considera los registros que se cargan en esta función. Esto tiene lógica para cuando se necesite pasar otros valores en el buffer además del contexto de ejecución, como por ejemplo en la INST WAIT que se pasa el recurso que se quiere utilizar. 
-    if(!buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros
-        t_sbuffer* buffer_desalojo = buffer_create(
+    if(!*buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros
+        *buffer_contexto_proceso = buffer_create(
             sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
             + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
         );
     }
     // 1. Cargo buffer con contexto de ejecución del proceso en el momento del desalojo
-    buffer_add_registros(buffer_contexto_proceso, &(registros));
+    buffer_add_registros(*buffer_contexto_proceso, &(registros));
     // 2. Envió el contexto de ejecución del proceso y el motivo de desalojo (código de operación del paquete) a KERNEL
-    cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_contexto_proceso); // esto ya desaloja el buffer!
+    cargar_paquete(conexion_kernel, mensaje_desalojo, *buffer_contexto_proceso); // esto ya desaloja el buffer!
 }
 
 void* recibir_interrupcion(void* conexion){

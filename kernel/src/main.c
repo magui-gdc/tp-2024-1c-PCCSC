@@ -289,8 +289,11 @@ void *planificar_corto_plazo(void *archivo_config)
             switch (mensaje_desalojo){
             case EXIT_PROCESO:
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
-                recupera_contexto_proceso(buffer_exit);
-                // TODO: se podría hacer una función genérica que sea recuperar contexto, que cargue el buffer y devuelva ya los datos 'procesados', ya que siempre va a devolver PID + registros y dichos valores se deberían actualizar en PCB según cada caso?
+                recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
+                //t_pcb* proceso = mqueue_pop(monitor_RUNNING);
+                //proceso->estado = EXIT; 
+                //mqueue_push(monitor_EXIT, proceso);
+                //log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
                 // luego de eso, se saca de cola RUNNING, se cambia su estado a EXIT, se lo agrega a cola EXIT (el planificador de largo plazo se va a encargar de liberar recursos)
                 // luego de liberar espacio en memoria => sem_post(&contador_grado_multiprogramacion): se haría en plani largo plazo EXIT
                 break;
@@ -523,7 +526,7 @@ void *planificar_new_to_ready(void *archivo_config)
                 t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
                 primer_elemento->estado = READY;
                 mqueue_push(monitor_READY, primer_elemento);
-                // TODO: Log cambio de estado
+                log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
                 // TODO: ingreso a READYs
                 log_info(logger, "estas en largo plazoo");
                 sem_post(&orden_planificacion);
