@@ -197,7 +197,7 @@ void decode_instruccion(char* leido, int conexion_kernel) {
             seguir_ejecucion = 0;
             proceso_instruccion_exit = 1;
             //registros.PC++; // de todas formas, si sale por acá, mucho no importa este valor pero bueno...........
-            desalojo_proceso(conexion_kernel, EXIT_PROCESO);
+            desalojo_proceso(NULL, conexion_kernel, EXIT_PROCESO);
             // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
         } 
         // TODO: SEGUIR
@@ -205,17 +205,19 @@ void decode_instruccion(char* leido, int conexion_kernel) {
     string_array_destroy(tokens);
 }
 
-void desalojo_proceso(int conexion_kernel, op_code mensaje_desalojo){
+// solo carga el contexto y retorna proceso (si tuvo que cargar otro valor antes suponemos que ya venía cargado en el buffer que se pasa por parámetro)
+void desalojo_proceso(t_sbuffer *buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo){
+    // O. Creo buffer si no vino cargado => si vino cargado, se supone que ya tiene el size que considera los registros que se cargan en esta función. Esto tiene lógica para cuando se necesite pasar otros valores en el buffer además del contexto de ejecución, como por ejemplo en la INST WAIT que se pasa el recurso que se quiere utilizar. 
+    if(!buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros
+        t_sbuffer* buffer_desalojo = buffer_create(
+            sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+            + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+        );
+    }
     // 1. Cargo buffer con contexto de ejecución del proceso en el momento del desalojo
-    t_sbuffer *buffer_contexto_proceso = buffer_create(
-        sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
-        + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
-    );
-
-    buffer_add_uint32(buffer_contexto_proceso, pid_proceso);
     buffer_add_registros(buffer_contexto_proceso, &(registros));
     // 2. Envió el contexto de ejecución del proceso y el motivo de desalojo (código de operación del paquete) a KERNEL
-    cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_contexto_proceso);
+    cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_contexto_proceso); // esto ya desaloja el buffer!
 }
 
 void* recibir_interrupcion(void* conexion){

@@ -73,7 +73,7 @@ void *atender_cliente(void *cliente)
 
             // TODO: leer desde el proceso la próxima instruccion!!!!
             char nombreArchivo[256];
-            snprintf(nombreArchivo, sizeof(nombreArchivo), "%d.txt", pid_proceso); // PROVISORIO!
+            snprintf(nombreArchivo, sizeof(nombreArchivo), "procesos/%d.txt", pid_proceso); // PROVISORIO!
 
             int lineaActual = 0, lee_instruccion = 0;
 

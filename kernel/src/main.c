@@ -129,9 +129,11 @@ int main(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// --------------------------- DEFINICION FUNCIONES KERNEL -----------------------------
 
-// ------------ DEFINICION FUNCIONES KERNEL ------------
-
+// -------------------- INICIO FCS. DE CONFIGURACION --------------------
 void cargar_config_struct_KERNEL(t_config *archivo_config)
 {
     config.puerto_escucha = config_get_string_value(archivo_config, "PUERTO_ESCUCHA");
@@ -143,7 +145,10 @@ void cargar_config_struct_KERNEL(t_config *archivo_config)
     config.algoritmo_planificacion = config_get_string_value(archivo_config, "ALGORITMO_PLANIFICACION");
     config.quantum = config_get_int_value(archivo_config, "QUANTUM");
 }
-
+// -------------------- FIN FCS. DE CONFIGURACION --------------------
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// -------------------- INICIO FCS. DE HILOS KERNEL --------------------
 // definicion funcion hilo consola
 void *consola_kernel(void *archivo_config)
 {
@@ -259,24 +264,7 @@ void *consola_kernel(void *archivo_config)
     return NULL;
 }
 
-void consola_interactiva(char* ruta_archivo){
-    /*char* instruccion = malloc(50);
-    char datoLeido;
-    FILE* script = fopen(ruta_archivo, "rb+");
-    if (script == NULL){
-        log_error(logger, "No se encontró ningún archivo con el nombre indicado...");
-    } else {
-        while (!feof(script))
-        {
-            fread(&datoLeido, sizeof(char), sizeof(datoLeido), script);
-            if(datoLeido == "\n"){
-                printf("INSTRUCCION LEIDA %s", instruccion);
-                consola_kernel(instruccion);
-            }
-        }
-    }*/
-}
-
+// definicion función hilo corto plazo
 void *planificar_corto_plazo(void *archivo_config)
 {
     while (1)
@@ -300,12 +288,23 @@ void *planificar_corto_plazo(void *archivo_config)
             
             switch (mensaje_desalojo){
             case EXIT_PROCESO:
+                t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
+                recupera_contexto_proceso(buffer_exit);
                 // TODO: se podría hacer una función genérica que sea recuperar contexto, que cargue el buffer y devuelva ya los datos 'procesados', ya que siempre va a devolver PID + registros y dichos valores se deberían actualizar en PCB según cada caso?
                 // luego de eso, se saca de cola RUNNING, se cambia su estado a EXIT, se lo agrega a cola EXIT (el planificador de largo plazo se va a encargar de liberar recursos)
                 // luego de liberar espacio en memoria => sem_post(&contador_grado_multiprogramacion): se haría en plani largo plazo EXIT
                 break;
             
             case WAIT_RECURSO:
+                // 1. carga el buffer (1. paso en la mayoría de los mensajes de desalojo )
+                // 2. lee únicamente (debería ser guardado en primer lugar) el nombre del recurso que pide la CPU utilizar
+                // 3. valida que dicho recurso esté disponible: 
+                    /*
+                    A) si no está disponible => bloquea (RUNNING->EXIT), informa a CPU, libera grado de multiprogramacion (liberando en memoria????) y ahora si ejecuta la función recuperar contexto del buffer que ya se encarga de actualizar en PCB
+                    B) si está disponible => le resta una instancia al recurso y devuelve proceso a CPU (no hace falta seguir leyendo del buffer)
+                    C) si no existe el nombre del recurso => recupera contexto del buffer actualizando PCB, (RUNNING->EXIT) ... mismo pasos que proceso EXIT
+                    */
+                // 4. libera buffer y otros recursos de memoria dinámica!!!!
                 break;
 
             case SIGNAL_RECURSO:
@@ -327,6 +326,7 @@ void *planificar_corto_plazo(void *archivo_config)
     }
 }
 
+// definicion funcion hilo largo plazo
 void *planificar_largo_plazo(void *archivo_config)
 {
     pthread_t thread_NEW_READY, thread_ALL_EXIT;
@@ -339,92 +339,29 @@ void *planificar_largo_plazo(void *archivo_config)
     return NULL;
 }
 
-void *planificar_new_to_ready(void *archivo_config)
-{
-    while (1)
-    {
-        sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA)
-        { // lectura
-            sem_post(&mutex_planificacion_pausada);
-            if (!mqueue_is_empty(monitor_NEW)){
-                sem_wait(&contador_grado_multiprogramacion);
-                t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
-                primer_elemento->estado = READY;
-                mqueue_push(monitor_READY, primer_elemento);
-                // TODO: Log cambio de estado
-                // TODO: ingreso a READYs
-                log_info(logger, "estas en largo plazoo");
-                sem_post(&orden_planificacion);
-            }
-        }
-        else
-            sem_post(&mutex_planificacion_pausada);
-    }
-}
+// -------------------- FIN FCS. DE HILOS KERNEL --------------------
 
-void *planificar_all_to_exit(void *args)
-{
-    while (1){   
-        // OTRA SOLUCION: 
-        /* creo que sería mejor agregar desde cada lugar desde donde se finalice el proceso (corto_plazo o consola) el pcb del proceso a la cola EXIT
-        y luego en este hilo trabajar con los procesos que van llegando a la cola EXIT (con semáforos y demás), y trabajar con cada caso:
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        Casos que pueden darse por FINALIZAR_PROCESO desde consola:
-            A) si el proceso tiene estado RUNNING se manda interrupcion a CPU para que desaloje  
-                => al desalojar de CPU se devuelve a kernel (cod_op INTERRUPCION) se actualiza luego su ctx y recién ahí se liberan recursos ¿no?
-            B) si el proceso tiene estado READY se lo saca de la cola (con semáforos), se liberan recursos y se aumenta en uno el grado de multiprogramación
-            C) si el proceso tiene estado NEW sólo se lo saca de la cola (con semáforos) y se libera memoria
-            E) si está bloqueado VER (un quilombo)
-        Casos que pueden darse por error (recurso inexistente, i/o no conectada a kernel, ...), es decir, errores durante la ejecución del proceso (corto plazo) o porque se finalizó el proceso correctamente (instrucción CPU)
-            A) se supone que cuando se agrega el PRC a EXIT desde corto plazo, ya se actualizó su ctx de ejecución en el momento en que CPU devolvió el PROCESO, así que sólo se liberarían recursos y memoria
-
-        Todos estos casos se reducen a lo siguiente (evaluando acción según estado del proceso):
-            0. en cualquier de los casos, lo que se hace antes de pasarlo a la cola EXIT, es sacarlo de la cola desde donde se encuentra actualmente!!!!
-            I. RUNNING: cuando se ejecuta finalizar_proceso desde consola a un proceso que tiene estado running, sólo se manda la interrupción a CPU para que lo libere 
-                    (desde corto plazo, una vez devuelto a kernel con su respectivo motivo de desalojo (ej: interrupcion_finalizar_proceso), se lo saca de la cola RUNNING, 
-                    ¿se liberan recursos acá en caso de corresponder?, se lo agrega a la cola EXIT con ctx ya actualizado y se le deja el estado aún en RUNNING)
-                    (analizar liberar los recursos, en caso de que corresponda, o ver si se puede hacer desde este hilo EXIT)
-            ----- A PARTIR DE ACÁ: PARA TODOS LOS OTROS CASOS, SEA DESDE CONSOLA O DESDE CORTO PLAZO, SE AGREGA EL PRC DIRECTAMENTE A LA COLA EXIT, 
-                    sacándolo primero de la cola desde donde se encuentra actualmente Y SE MANEJA EL PASO A PASO DESDE ESTE HILO -----
-            1. NEW: se libera memoria, se pasa a estado EXIT
-            2. READY: se aumenta un grado de multiprogramación, se libera memoria, se pasa a estado EXIT
-            3. RUNNING: (ya realizado todo lo del caso I o por instrucción o error en momento de ejecución donde el proceso se lo devolvió a kernel y se realizaron los mismos pasos que en el caso I),
-                        se libera memoria, se pasa a estado EXIT
-            4. BLOCKED: se lo saca de la cola desde donde esté bloqueado (analizar si ese puntero a cola se guarda en el pcb), se libera memoria, se pasa a estado EXIT
-            5. EXIT: no se hace nada, ya está en EXIT...     
-
-            luego, se los saca de la cola EXIT
-        */
-
-        /*
-        // TODO: analizar que pasa si se ejecutan dos finalizar procesos uno tras otro? analizar semaforo.
-        if (FINALIZACION.FLAG_FINALIZACION)
+// ------------- INICIO FCS. HILO CONSOLA KERNEL -------------
+void consola_interactiva(char* ruta_archivo){
+    /*char* instruccion = malloc(50);
+    char datoLeido;
+    FILE* script = fopen(ruta_archivo, "rb+");
+    if (script == NULL){
+        log_error(logger, "No se encontró ningún archivo con el nombre indicado...");
+    } else {
+        while (!feof(script))
         {
-            if (obtener_cola(FINALIZACION.PID) == cola_RUNNING)
-            {
-                // mensaje de interrupt al cpu
-                queue_push(cola_EXIT, queue_peek(cola_RUNNING));
-                queue_pop(cola_RUNNING);
+            fread(&datoLeido, sizeof(char), sizeof(datoLeido), script);
+            if(datoLeido == "\n"){
+                printf("INSTRUCCION LEIDA %s", instruccion);
+                consola_kernel(instruccion);
             }
-            else
-            {
-                queue_push(cola_EXIT, queue_peek(obtener_cola(FINALIZACION.PID)));
-                queue_pop(obtener_cola(FINALIZACION.PID));
-            }
-            if (obtener_cola(FINALIZACION.PID) != cola_NEW)
-            {
-                // habilitar espacio de multiprogramación (esto será muy probablemente un semáforo)
-            }
-            // poner error si se encuentra en la cola_EXIT
-            FINALIZACION.FLAG_FINALIZACION = FALSE;
         }
-        */
-    }
-    return NULL;
+    }*/
 }
-
-//////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
 uint32_t iniciar_proceso(char *path){
@@ -459,52 +396,10 @@ void finalizar_proceso(char* pid_buscado){
 
 }
 */
-
-
-void* atender_cliente(void* cliente){
-	int cliente_recibido = *(int*) cliente;
-	while(1){
-		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
-		switch (cod_op)
-		{
-		case CONEXION:
-			recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
-			break;
-		case PAQUETE:
-			t_list* lista = recibir_paquete(cliente_recibido);
-			log_info(logger, "Me llegaron los siguientes valores:\n");
-			list_iterate(lista, (void*) iterator); //esto es un mapeo
-			break;
-		case -1:
-			log_error(logger, "Cliente desconectado.");
-			close(cliente_recibido); // cierro el socket accept del cliente
-			free(cliente); // libero el malloc reservado para el cliente
-			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
-		default:
-			log_warning(logger, "Operacion desconocida.");
-			break;
-		}
-	}
-}
-
-// ENVIAR PCB POR DISPATCH
-void enviar_proceso_a_cpu(){
-    t_pcb* proceso = mqueue_peek(monitor_RUNNING); // lo tomo sin extraerlo
-    // creo un buffer para pasar los datos a cpu
-    t_sbuffer* buffer_dispatch = buffer_create(
-        sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
-        + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
-    );
-
-    buffer_add_uint32(buffer_dispatch, proceso->pid);
-    buffer_add_registros(buffer_dispatch, &(proceso->registros));
-
-    // una vez que tengo el buffer, lo envío a CPU!!
-    cargar_paquete(conexion_cpu_dispatch, EJECUTAR_PROCESO, buffer_dispatch); 
-    log_info(logger, "envio paquete a cpu");
-}
-
-// ALGORITMOS DE PLANIFICACION
+// ------------- FIN FCS. HILO CONSOLA KERNEL -------------
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ------------- INICIO FUNCIONES PARA PLANI. CORTO PLAZO -------------
+// ------ ALGORITMOS DE PLANIFICACION
 fc_puntero obtener_algoritmo_planificacion(){
     if(strcmp(config.algoritmo_planificacion, "FIFO") == 0)
         return &algortimo_fifo;
@@ -589,4 +484,143 @@ void* control_quantum(void* tipo_algoritmo){
         // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
     return NULL;
 }
-//////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// ------- ENVIAR PCB POR DISPATCH
+void enviar_proceso_a_cpu(){
+    t_pcb* proceso = mqueue_peek(monitor_RUNNING); // lo tomo sin extraerlo
+    // creo un buffer para pasar los datos a cpu
+    t_sbuffer* buffer_dispatch = buffer_create(
+        sizeof(uint32_t) * 9 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI + PID
+        + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+    );
+
+    buffer_add_uint32(buffer_dispatch, proceso->pid);
+    buffer_add_registros(buffer_dispatch, &(proceso->registros));
+
+    // una vez que tengo el buffer, lo envío a CPU!!
+    cargar_paquete(conexion_cpu_dispatch, EJECUTAR_PROCESO, buffer_dispatch); 
+    log_info(logger, "envio paquete a cpu");
+}
+
+// ------- RECUPERAR CONTEXTO ANTE DESALOJO DE PROCESO DE CPU
+void recupera_contexto_proceso(t_sbuffer* buffer){
+    t_pcb* proceso = mqueue_peek(monitor_RUNNING); 
+    buffer_read_registros(buffer, proceso->registros);
+}
+// ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ------------- INICIO FCS. PLANI. LARGO PLAZO -------------
+void *planificar_new_to_ready(void *archivo_config)
+{
+    while (1)
+    {
+        sem_wait(&mutex_planificacion_pausada);
+        if (!PLANIFICACION_PAUSADA)
+        { // lectura
+            sem_post(&mutex_planificacion_pausada);
+            if (!mqueue_is_empty(monitor_NEW)){
+                sem_wait(&contador_grado_multiprogramacion);
+                t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+                primer_elemento->estado = READY;
+                mqueue_push(monitor_READY, primer_elemento);
+                // TODO: Log cambio de estado
+                // TODO: ingreso a READYs
+                log_info(logger, "estas en largo plazoo");
+                sem_post(&orden_planificacion);
+            }
+        }
+        else
+            sem_post(&mutex_planificacion_pausada);
+    }
+}
+
+void *planificar_all_to_exit(void *args)
+{
+    while (1){   
+        // OTRA SOLUCION: 
+        /* creo que sería mejor agregar desde cada lugar desde donde se finalice el proceso (corto_plazo o consola) el pcb del proceso a la cola EXIT
+        y luego en este hilo trabajar con los procesos que van llegando a la cola EXIT (con semáforos y demás), y trabajar con cada caso:
+
+        Casos que pueden darse por FINALIZAR_PROCESO desde consola:
+            A) si el proceso tiene estado RUNNING se manda interrupcion a CPU para que desaloje  
+                => al desalojar de CPU se devuelve a kernel (cod_op INTERRUPCION) se actualiza luego su ctx y recién ahí se liberan recursos ¿no?
+            B) si el proceso tiene estado READY se lo saca de la cola (con semáforos), se liberan recursos y se aumenta en uno el grado de multiprogramación
+            C) si el proceso tiene estado NEW sólo se lo saca de la cola (con semáforos) y se libera memoria
+            E) si está bloqueado VER (un quilombo)
+        Casos que pueden darse por error (recurso inexistente, i/o no conectada a kernel, ...), es decir, errores durante la ejecución del proceso (corto plazo) o porque se finalizó el proceso correctamente (instrucción CPU)
+            A) se supone que cuando se agrega el PRC a EXIT desde corto plazo, ya se actualizó su ctx de ejecución en el momento en que CPU devolvió el PROCESO, así que sólo se liberarían recursos y memoria
+
+        Todos estos casos se reducen a lo siguiente (evaluando acción según estado del proceso):
+            0. en cualquier de los casos, lo que se hace antes de pasarlo a la cola EXIT, es sacarlo de la cola desde donde se encuentra actualmente!!!!
+            I. RUNNING: cuando se ejecuta finalizar_proceso desde consola a un proceso que tiene estado running, sólo se manda la interrupción a CPU para que lo libere 
+                    (desde corto plazo, una vez devuelto a kernel con su respectivo motivo de desalojo (ej: interrupcion_finalizar_proceso), se lo saca de la cola RUNNING, 
+                    ¿se liberan recursos acá en caso de corresponder?, se lo agrega a la cola EXIT con ctx ya actualizado y se le deja el estado aún en RUNNING)
+                    (analizar liberar los recursos, en caso de que corresponda, o ver si se puede hacer desde este hilo EXIT)
+            ----- A PARTIR DE ACÁ: PARA TODOS LOS OTROS CASOS, SEA DESDE CONSOLA O DESDE CORTO PLAZO, SE AGREGA EL PRC DIRECTAMENTE A LA COLA EXIT, 
+                    sacándolo primero de la cola desde donde se encuentra actualmente Y SE MANEJA EL PASO A PASO DESDE ESTE HILO -----
+            1. NEW: se libera memoria, se pasa a estado EXIT
+            2. READY: se aumenta un grado de multiprogramación, se libera memoria, se pasa a estado EXIT
+            3. RUNNING: (ya realizado todo lo del caso I o por instrucción o error en momento de ejecución donde el proceso se lo devolvió a kernel y se realizaron los mismos pasos que en el caso I),
+                        se libera memoria, se pasa a estado EXIT
+            4. BLOCKED: se lo saca de la cola desde donde esté bloqueado (analizar si ese puntero a cola se guarda en el pcb), se libera memoria, se pasa a estado EXIT
+            5. EXIT: no se hace nada, ya está en EXIT...     
+
+            luego, se los saca de la cola EXIT
+        */
+
+        /*
+        // TODO: analizar que pasa si se ejecutan dos finalizar procesos uno tras otro? analizar semaforo.
+        if (FINALIZACION.FLAG_FINALIZACION)
+        {
+            if (obtener_cola(FINALIZACION.PID) == cola_RUNNING)
+            {
+                // mensaje de interrupt al cpu
+                queue_push(cola_EXIT, queue_peek(cola_RUNNING));
+                queue_pop(cola_RUNNING);
+            }
+            else
+            {
+                queue_push(cola_EXIT, queue_peek(obtener_cola(FINALIZACION.PID)));
+                queue_pop(obtener_cola(FINALIZACION.PID));
+            }
+            if (obtener_cola(FINALIZACION.PID) != cola_NEW)
+            {
+                // habilitar espacio de multiprogramación (esto será muy probablemente un semáforo)
+            }
+            // poner error si se encuentra en la cola_EXIT
+            FINALIZACION.FLAG_FINALIZACION = FALSE;
+        }
+        */
+    }
+    return NULL;
+}
+// ------------- FIN FCS. PLANI. LARGO PLAZO -------------
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ------------- INICIO FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
+void* atender_cliente(void* cliente){
+	int cliente_recibido = *(int*) cliente;
+	while(1){
+		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
+		switch (cod_op)
+		{
+		case CONEXION:
+			recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
+			break;
+		case PAQUETE:
+			t_list* lista = recibir_paquete(cliente_recibido);
+			log_info(logger, "Me llegaron los siguientes valores:\n");
+			list_iterate(lista, (void*) iterator); //esto es un mapeo
+			break;
+		case -1:
+			log_error(logger, "Cliente desconectado.");
+			close(cliente_recibido); // cierro el socket accept del cliente
+			free(cliente); // libero el malloc reservado para el cliente
+			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+		default:
+			log_warning(logger, "Operacion desconocida.");
+			break;
+		}
+	}
+}
+// ------------- FIN FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
+/////////////////////////////////////////////////////////////////////////////////////////////////////////

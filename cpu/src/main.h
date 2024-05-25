@@ -1,6 +1,7 @@
 #include <utils/utilsServer.h>
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
+#include <utils/buffer.h>
 
 typedef struct
 {
@@ -23,4 +24,4 @@ void* recibir_interrupcion(void*);
 // ---------------- FCS. CICLO INSTRUCCION ----------------
 void ciclo_instruccion(int conexion_kernel);
 void decode_instruccion(char* leido, int conexion_kernel);
-void desalojo_proceso(int conexion_kernel, op_code mensaje_desalojo);
+void desalojo_proceso(t_sbuffer* buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo);
