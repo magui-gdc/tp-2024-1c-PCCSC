@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
+#include <utils/monitores.h>
 #include "main.h"
-#include "monitores.h"
 #include "logs.h"
 
 /* TODO:
@@ -190,6 +190,14 @@ void *consola_kernel(void *archivo_config)
             else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *pid_char = tokens[1];
                 if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0){
+                    
+                    sem_wait(&mutex_planificacion_pausada);
+                    PLANIFICACION_PAUSADA = 1;
+                    sem_post(&mutex_planificacion_pausada);
+                
+                    
+
+                    
                     /*
                     que pasa si finalizo proceso?
                     1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
@@ -204,6 +212,12 @@ void *consola_kernel(void *archivo_config)
                     CUALQUIER OTRO ESTADO: se lo saca de su cola actual, se lo pasa a EXIT y se activa semáforo sem_post(&orden_proceso_exit) para indicarle al plani de largo plazo que se ingresó un proceso a la cola EXIT!
                     3. inicio la planificacion
                     */
+
+                    sem_wait(&mutex_planificacion_pausada);
+                    PLANIFICACION_PAUSADA = 0;
+                    sem_post(&mutex_planificacion_pausada);
+                
+
                     printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                 }
             }
@@ -315,6 +329,10 @@ void *planificar_corto_plazo(void *archivo_config){
                 break;
 
             case FIN_QUANTUM:
+                log_info(logger, "se termino el quantum.");
+                t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
+                recupera_contexto_proceso(buffer_desalojo);
+                mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
                 break;
             // (...)
             }
@@ -480,10 +498,26 @@ void* control_quantum(void* tipo_algoritmo){
                 pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
             }
         }
+        t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
+        enviar_interrupcion_a_cpu(interrupt);
         // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
         // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
+        
         // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
     return NULL;
+}
+
+void enviar_interrupcion_a_cpu(t_pic interrupcion){
+    t_sbuffer* buffer_interrupt = buffer_create(
+        sizeof(uint32_t) // PID
+        + sizeof(int) // COD_OP
+    );
+
+    buffer_add(buffer_interrupt, interrupcion.pid);
+    buffer_add_int(buffer_interrupt, interrupcion.motivo_interrupcion);
+
+    cargar_paquete(conexion_cpu_interrupt, INTERRUPCION, buffer_interrupt); 
+    log_info(logger, "envio interrupcion a cpu");
 }
 
 // ------- ENVIAR PCB POR DISPATCH

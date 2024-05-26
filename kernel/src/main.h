@@ -35,12 +35,23 @@ typedef struct{
     int quantum;
 } config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
+typedef struct{ //LO DEFINO ASI PORQUE NO SABEMOS COMO SON LOS RECURSOS AUN
+    char* recursoNombre;
+}t_recurso;
+
+typedef struct {
+    uint32_t pid;
+    op_code motivo_interrupcion;
+} t_pic;
+
 typedef struct {
     uint32_t pid;
     uint32_t program_counter;
     uint8_t quantum;
     t_registros_cpu registros;
     e_estado_proceso estado;
+    char* path[256];
+    t_recurso recursos[];
 } t_pcb; // PCB
 
 typedef struct {

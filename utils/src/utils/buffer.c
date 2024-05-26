@@ -28,6 +28,16 @@ void buffer_read(t_sbuffer *buffer, void *data, uint32_t size) {
 }
 
 // Agrega un uint32_t al buffer
+void buffer_add_int(t_sbuffer *buffer, int data) {
+    buffer_add(buffer, &data, sizeof(int));
+}
+
+uint32_t buffer_read_int(t_sbuffer *buffer) {
+    uint32_t data;
+    buffer_read(buffer, &data, sizeof(int));
+    return data;
+}
+
 void buffer_add_uint32(t_sbuffer *buffer, uint32_t data) {
     buffer_add(buffer, &data, sizeof(uint32_t));
 }

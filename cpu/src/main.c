@@ -4,6 +4,8 @@
 #include <pthread.h>
 #include "main.h"
 #include "instrucciones.h"
+#include <utils/monitores.h>
+
 
 config_struct config;
 t_registros_cpu registros; 
@@ -145,6 +147,7 @@ void ciclo_instruccion(int conexion_kernel){
         free(leido);
         buffer_destroy(buffer_de_instruccion);
         // ---------------------- CHECK INTERRUPT  ---------------------- //
+        check_interrupt(pid_proceso);
         // 4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR) 
         // deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
         // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
@@ -155,6 +158,13 @@ void ciclo_instruccion(int conexion_kernel){
     } else {
         // TODO: PROBLEMAS
     }
+}
+
+void check_interrupt(char* pid_proceso){
+    t_pic primera_interrupcion = mqueue_peek(monitor_INTERRUPCIONES);
+    if(primera_interrupcion.pid == pid_proceso){
+        
+    }    
 }
 
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
@@ -225,7 +235,25 @@ void* recibir_interrupcion(void* conexion){
             recibir_conexion(interrupcion_kernel);
             break;
         case INTERRUPCION:
-            // acá recibe la interrupción y la agrega en la estructura PIC (evaluar si es una lista con struct donde se guarden valores como el PID del proceso, la acción a tomar, y si se debe agregar ordenado según algún bit de prioridad)
+            
+            log_info(logger, "RECIBISTE ALGO EN INTERRUPCION");
+            t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
+            
+            // guarda datos del buffer (contexto de proceso)
+            t_pic interrupcion_recibida = {buffer_read_uint32(buffer_interrupt), buffer_read_int(buffer_interrupt)}; // guardo PID del proceso que se va a ejecutar
+            
+            //ANTES DE AGREGAR LA INTERRUPCION A LA LISTA DE INTERRUPCIONES, DEBE VERIFICAR QUE EL PROCESO NO SE HAYA DESALOJADO PREVIAMENTE
+            if(1){
+                mqueue_push(monitor_INTERRUPCIONES, interrupcion_recibida);
+            }
+
+
+            // a modo de log: CAMBIAR DESPUÉS
+            char* mensaje = (char*)malloc(128);
+            sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida.pid, interrupcion_recibida.motivo_interrupcion);
+            log_info(logger, "%s", mensaje);
+            free(mensaje);
+
             break;
         case -1:
             log_error(logger, "cliente desconectado");

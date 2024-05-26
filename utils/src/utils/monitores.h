@@ -15,6 +15,7 @@ extern t_mqueue* monitor_READY;
 extern t_mqueue* monitor_BLOCKED;
 extern t_mqueue* monitor_RUNNING;
 extern t_mqueue* monitor_EXIT;
+extern t_mqueue* monitor_INTERRUPCIONES;
 #endif
 
 // --------- MONITORES (sincronizacion) --------- //
