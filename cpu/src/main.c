@@ -139,6 +139,7 @@ void ciclo_instruccion(int conexion_kernel){
         t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
         uint32_t length;
         char* leido = buffer_read_string(buffer_de_instruccion, &length);
+        leido[strcspn(leido, "\n")] = '\0';
 
         // ---------------------- ETAPA DECODE + EXECUTE  ---------------------- //
         // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
@@ -147,7 +148,7 @@ void ciclo_instruccion(int conexion_kernel){
         free(leido);
         buffer_destroy(buffer_de_instruccion);
         // ---------------------- CHECK INTERRUPT  ---------------------- //
-        check_interrupt(pid_proceso);
+        check_interrupt(pid_proceso, leido, conexion_kernel);
         // 4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR) 
         // deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
         // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
@@ -160,17 +161,18 @@ void ciclo_instruccion(int conexion_kernel){
     }
 }
 
-void check_interrupt(char* pid_proceso){
-    t_pic primera_interrupcion = mqueue_peek(monitor_INTERRUPCIONES);
-    if(primera_interrupcion.pid == pid_proceso){
-        
-    }    
+void check_interrupt(char* pid_proceso, char* leido, int conexion_kernel){
+    t_pic* primera_interrupcion = (t_pic*)mqueue_peek(monitor_INTERRUPCIONES);
+    if(leido != "EXIT"){
+        if(primera_interrupcion->pid == pid_proceso){
+            desalojo_proceso(NULL, conexion_kernel, primera_interrupcion->motivo_interrupcion);
+        }    
+    }
 }
 
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
     // TODO: MMU en caso de traducción dire. lógica a dire. física
-    leido[strcspn(leido, "\n")] = '\0';
     char *mensaje = (char *)malloc(128);
     sprintf(mensaje, "CPU: LINEA DE INSTRUCCION %s", leido);
     log_info(logger, "%s", mensaje);
@@ -240,17 +242,14 @@ void* recibir_interrupcion(void* conexion){
             t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
             
             // guarda datos del buffer (contexto de proceso)
-            t_pic interrupcion_recibida = {buffer_read_uint32(buffer_interrupt), buffer_read_int(buffer_interrupt)}; // guardo PID del proceso que se va a ejecutar
+            t_pic *interrupcion_recibida = {buffer_read_uint32(buffer_interrupt), buffer_read_int(buffer_interrupt)}; // guardo PID del proceso que se va a ejecutar
             
             //ANTES DE AGREGAR LA INTERRUPCION A LA LISTA DE INTERRUPCIONES, DEBE VERIFICAR QUE EL PROCESO NO SE HAYA DESALOJADO PREVIAMENTE
-            if(1){
-                mqueue_push(monitor_INTERRUPCIONES, interrupcion_recibida);
-            }
-
-
+            
+            mqueue_push(monitor_INTERRUPCIONES, interrupcion_recibida);
             // a modo de log: CAMBIAR DESPUÉS
             char* mensaje = (char*)malloc(128);
-            sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida.pid, interrupcion_recibida.motivo_interrupcion);
+            sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
             log_info(logger, "%s", mensaje);
             free(mensaje);
 

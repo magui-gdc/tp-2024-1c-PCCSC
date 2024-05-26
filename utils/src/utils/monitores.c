@@ -67,3 +67,4 @@ void destruir_monitores(void){
     mqueue_destroy(monitor_EXIT);
     mqueue_destroy(monitor_INTERRUPCIONES);
 }
+

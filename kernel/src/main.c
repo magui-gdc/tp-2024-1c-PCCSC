@@ -195,8 +195,13 @@ void *consola_kernel(void *archivo_config)
                     PLANIFICACION_PAUSADA = 1;
                     sem_post(&mutex_planificacion_pausada);
                 
-                    
+                    t_pcb* proceso_buscado = (t_pcb*)buscar_pcb_por_pid(pid_char);
 
+                    if(proceso_buscado ->estado == RUNNING){
+                        proceso_buscado->interrupido = FINALIZAR_PROCESO;
+                    }
+                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
+                    enviar_interrupcion_a_cpu(interrupt);
                     
                     /*
                     que pasa si finalizo proceso?
@@ -276,6 +281,15 @@ void *consola_kernel(void *archivo_config)
     return NULL;
 }
 
+void *buscar_pcb_por_pid(uint32_t pid_buscado)
+{
+    bool comparar_pid(void *elemento){
+        t_pcb *pcb = (t_pcb *)elemento;
+        return pcb->pid == pid_buscado;
+    }
+    return list_find(pcb_list, comparar_pid); // si no funciona pasarlo como puntero a funcion
+}
+
 // definicion función hilo corto plazo
 void *planificar_corto_plazo(void *archivo_config){
     while (1){
@@ -309,7 +323,8 @@ void *planificar_corto_plazo(void *archivo_config){
                 log_info(logger, "se termino de ejecutar proceso");
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
-                mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
+                mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
+                // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
                 sem_post(&orden_proceso_exit);
                 break;
             
@@ -333,6 +348,8 @@ void *planificar_corto_plazo(void *archivo_config){
                 t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_desalojo);
                 mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
+                sem_post(&contador_grado_multiprogramacion);
+                mqueue_pop(monitor_INTERRUPCIONES);//Elimina la interrupcion que ya se ejecutó.
                 break;
             // (...)
             }
@@ -394,6 +411,9 @@ void iniciar_proceso(char *path){
     proceso->quantum = config.quantum;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
+    proceso->path = path;
+    proceso->recursos = [];
+    proceso->interrupido = 0;
 
     mqueue_push(monitor_NEW, proceso);
 
@@ -403,18 +423,6 @@ void iniciar_proceso(char *path){
     pid++;
 }
 
-/*
-void finalizar_proceso(char* pid_buscado){
-
-    struct {
-        uint8_t _pid = (uint8_t)atoi(pid_buscado);
-        t_pcb* elemento;
-    }
-    t_pcb* proc = list_find(pcb_list, comparacion);
-    free(proc);
-
-}
-*/
 // ------------- FIN FCS. HILO CONSOLA KERNEL -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ------------- INICIO FUNCIONES PARA PLANI. CORTO PLAZO -------------
@@ -498,6 +506,7 @@ void* control_quantum(void* tipo_algoritmo){
                 pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
             }
         }
+        primer_elemento->interrupido = DESALOJAR_PROCESO;
         t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
         enviar_interrupcion_a_cpu(interrupt);
         // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
@@ -513,7 +522,7 @@ void enviar_interrupcion_a_cpu(t_pic interrupcion){
         + sizeof(int) // COD_OP
     );
 
-    buffer_add(buffer_interrupt, interrupcion.pid);
+    buffer_add_uint32(buffer_interrupt, interrupcion.pid);
     buffer_add_int(buffer_interrupt, interrupcion.motivo_interrupcion);
 
     cargar_paquete(conexion_cpu_interrupt, INTERRUPCION, buffer_interrupt); 
@@ -596,9 +605,19 @@ void *planificar_all_to_exit(void *args){
                     // TODO: libero memoria
                     proceso_exit->estado = EXIT;
                     log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
+                    liberar_proceso_en_memoria(proceso_exit->pid);
                     break;
                 case READY:
+                    //
+                    proceso_exit->estado = EXIT;
+                    log_cambio_estado_proceso(logger, proceso_exit->pid, "READY", "EXIT");
+                    liberar_proceso_en_memoria(proceso_exit->pid);
+                    sem_post(&contador_grado_multiprogramacion);
                 case RUNNING:
+                    proceso_exit->estado = EXIT;
+                    log_cambio_estado_proceso(logger, proceso_exit->pid, "RUNNING", "EXIT");
+                    liberar_proceso_en_memoria(proceso_exit->pid);
+                    sem_post(&contador_grado_multiprogramacion);
                 case BLOCKED:
                     // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
                     op_code estado_actual = proceso_exit->estado;
@@ -617,6 +636,22 @@ void *planificar_all_to_exit(void *args){
     }
     return NULL;
 }
+
+void liberar_memoria_proceso(t_pcb* proceso){
+    if (proceso != NULL){
+        free(proceso->path);
+
+        // Si proceso->recursos es un array de punteros, se libera cada uno y luego el array
+        /*for (int i = 0; i < proceso->recursos_count; i++) {
+            free(proceso->recursos[i]);
+        }*/ //ACA NECESITO SABER LA CANTIDAD DE RECURSOS
+        free(proceso->recursos);
+
+        // Finalmente, se libera el propio proceso
+        free(proceso);
+    }   
+}
+
 // ------------- FIN FCS. PLANI. LARGO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ------------- INICIO FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
@@ -647,3 +682,27 @@ void* atender_cliente(void* cliente){
 }
 // ------------- FIN FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ------------- INICIO FUNCIONES PARA MEMORIA -------------
+void enviar_path_a_memoria(char* path){
+    uint32_t longitud = (uint32_t)strlen(path);
+    t_sbuffer* buffer_memoria = buffer_create(
+        sizeof(char) * longitud
+    );
+    buffer_add_string(buffer_memoria, longitud, path);
+
+
+    cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_memoria); 
+    log_info(logger, "envio path, para crear proceso, a memoria");
+} //FUNCION iniciar_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
+
+void liberar_proceso_en_memoria(uint32_t pid_proceso){
+    t_sbuffer* buffer_memoria = buffer_create(
+        sizeof(uint32_t) //PID
+    );
+    buffer_add_uint32(buffer_memoria, pid_proceso);
+
+
+    cargar_paquete(conexion_memoria, FINALIZAR_PROCESO, buffer_memoria); 
+    log_info(logger, "envio pid, a liberar, a memoria");
+} //FUNCION liberar_memoria_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
+// ------------- FIN FUNCIONES PARA MEMORIA -------------

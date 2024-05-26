@@ -24,6 +24,14 @@ typedef enum {
     EXIT
 } e_estado_proceso; // ESTADOS PROCESOS
 
+typedef enum
+{
+    NO_FINALIZADO,
+    FINALIZAR_PROCESO,
+    DESALOJAR_PROCESO
+} cod_finalizar;
+
+
 typedef struct{
     char* puerto_escucha;
     char* ip_memoria;
@@ -52,6 +60,7 @@ typedef struct {
     e_estado_proceso estado;
     char* path[256];
     t_recurso recursos[];
+    cod_finalizar interrupido;
 } t_pcb; // PCB
 
 typedef struct {
