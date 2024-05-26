@@ -196,7 +196,7 @@ void *consola_kernel(void *archivo_config)
                     2. pregunto por su estado
                     RUNNING
                         -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
-                            a) actualizo un nuevo atributo del pcb que sea finalizar, entonces que dicho valor se setee en 0 al crear el proceso, se cambie a 1 desde acá 
+                            a) actualizo un nuevo atributo del pcb que sea finalizar, entonces que dicho valor se setee en 0 al crear el proceso, se cambie a 1 desde acá  
                                 y que se consulte su valor desde el manejo del desalojo del proceso, para que, en caso de ser = 1, no siga su desalojo común sino que lo mande a FINALIZAR_PROCESO
                             b) mando interrupción a cpu con operacion FINALIZAR_PROCESO para que se lo desaloje (send de kernel a CPU INTERRUPT) 
                             c) luego el corto plazo, con su mensaje de desalojo FINALIZAR_PROCESO, lo va a mandar a la cola EXIT y va a hacer el resto de las acciones que se hacen en EXIT (incluyendo el sem_post(&orden_proceso_exit)!!!!

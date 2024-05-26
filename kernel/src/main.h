@@ -57,7 +57,7 @@ void* planificar_corto_plazo(void*);
 void* planificar_largo_plazo(void*);
 void* planificar_new_to_ready(void*);
 void* planificar_all_to_exit(void*);
-
+ 
 // ---------  --------- //
 void iniciar_proceso(char*);
 void consola_interactiva(char*);
