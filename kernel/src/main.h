@@ -59,7 +59,7 @@ void* planificar_new_to_ready(void*);
 void* planificar_all_to_exit(void*);
 
 // ---------  --------- //
-uint32_t iniciar_proceso(char*);
+void iniciar_proceso(char*);
 void consola_interactiva(char*);
 void enviar_proceso_a_cpu();
 void recupera_contexto_proceso(t_sbuffer* buffer);

@@ -26,16 +26,9 @@ fc_puntero algoritmo_planificacion;
 uint8_t PLANIFICACION_PAUSADA;
 prcs_fin FINALIZACION;
 
-/* se crean monitores en su lugar!
-t_queue *cola_NEW;
-t_queue *cola_READY;
-t_queue *cola_BLOCKED;
-t_queue *cola_RUNNING;
-t_queue *cola_EXIT;
-*/
 t_queue *cola_READY_VRR;
 
-sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running;
+sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running, orden_proceso_exit;
 int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
 
 int main(int argc, char *argv[])
@@ -60,6 +53,7 @@ int main(int argc, char *argv[])
     sem_init(&orden_planificacion, 0, 0);
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
     sem_init(&listo_proceso_en_running, 0, 0);
+    sem_init(&orden_proceso_exit, 0, 0);
 
     decir_hola("Kernel");
 
@@ -120,6 +114,7 @@ int main(int argc, char *argv[])
     sem_destroy(&contador_grado_multiprogramacion);
     sem_destroy(&orden_planificacion);
     sem_destroy(&listo_proceso_en_running);
+    sem_destroy(&orden_proceso_exit);
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -177,35 +172,38 @@ void *consola_kernel(void *archivo_config)
                     printf("path ingresado (ejecutar_script): %s\n", path);
                 }
             } // INICIAR_PROCESO /carpetaProcesos/proceso1
-            else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2)
-            {
+            else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *path = tokens[1];
-                uint8_t pid_proceso_iniciado;
                 t_paquete* paquete_proceso = crear_paquete();
-                if (strlen(path) != 0 && path != NULL)
-                {   
+                if (strlen(path) != 0 && path != NULL){   
                     agregar_a_paquete(paquete_proceso, path, sizeof(path));
                     paquete_proceso->codigo_operacion = INICIAR_PROCESO;
                     enviar_paquete(paquete_proceso, conexion_memoria);
                     // solicitar creacion a memoria de proceso
                     // si se crea proceso, iniciar largo plazo
 
-                    pid_proceso_iniciado = iniciar_proceso(path);
+                    iniciar_proceso(path);
                     // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
-
-                    // lo agrega en la cola NEW --> consultada desde planificador_largo_plazo, evaluar semáforo.
-
                     printf("path ingresado (iniciar_proceso): %s\n", path);
                 }
             }
-            else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2)
-            {
+            else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *pid_char = tokens[1];
-                if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0)
-                {
-                    // finalizar_proceso(pid);
-                    FINALIZACION.FLAG_FINALIZACION = true; // falta que el cpu y los errores puedan activar el flag tambien
-                    FINALIZACION.PID = (uint32_t)atoi(pid_char);
+                if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0){
+                    /*
+                    que pasa si finalizo proceso?
+                    1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
+                    2. pregunto por su estado
+                    RUNNING
+                        -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
+                            a) actualizo un nuevo atributo del pcb que sea finalizar, entonces que dicho valor se setee en 0 al crear el proceso, se cambie a 1 desde acá 
+                                y que se consulte su valor desde el manejo del desalojo del proceso, para que, en caso de ser = 1, no siga su desalojo común sino que lo mande a FINALIZAR_PROCESO
+                            b) mando interrupción a cpu con operacion FINALIZAR_PROCESO para que se lo desaloje (send de kernel a CPU INTERRUPT) 
+                            c) luego el corto plazo, con su mensaje de desalojo FINALIZAR_PROCESO, lo va a mandar a la cola EXIT y va a hacer el resto de las acciones que se hacen en EXIT (incluyendo el sem_post(&orden_proceso_exit)!!!!
+                    EXIT: no hago nada.
+                    CUALQUIER OTRO ESTADO: se lo saca de su cola actual, se lo pasa a EXIT y se activa semáforo sem_post(&orden_proceso_exit) para indicarle al plani de largo plazo que se ingresó un proceso a la cola EXIT!
+                    3. inicio la planificacion
+                    */
                     printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                 }
             }
@@ -265,13 +263,10 @@ void *consola_kernel(void *archivo_config)
 }
 
 // definicion función hilo corto plazo
-void *planificar_corto_plazo(void *archivo_config)
-{
-    while (1)
-    {
+void *planificar_corto_plazo(void *archivo_config){
+    while (1){
         sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA)
-        { // lectura
+        if (!PLANIFICACION_PAUSADA){ // lectura
             sem_post(&mutex_planificacion_pausada);
             sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
 
@@ -286,16 +281,22 @@ void *planificar_corto_plazo(void *archivo_config)
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
             int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
             
+            // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
+            // CONTINÚA SÓLO SI LA PLANIFICACION NO ESTÁ PAUSADA!!!
+            sem_wait(&mutex_planificacion_pausada);
+            while (PLANIFICACION_PAUSADA) {
+                sem_post(&mutex_planificacion_pausada);
+                sem_wait(&mutex_planificacion_pausada);
+            }
+            sem_post(&mutex_planificacion_pausada);
+
             switch (mensaje_desalojo){
             case EXIT_PROCESO:
+                log_info(logger, "se termino de ejecutar proceso");
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
-                //t_pcb* proceso = mqueue_pop(monitor_RUNNING);
-                //proceso->estado = EXIT; 
-                //mqueue_push(monitor_EXIT, proceso);
-                //log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
-                // luego de eso, se saca de cola RUNNING, se cambia su estado a EXIT, se lo agrega a cola EXIT (el planificador de largo plazo se va a encargar de liberar recursos)
-                // luego de liberar espacio en memoria => sem_post(&contador_grado_multiprogramacion): se haría en plani largo plazo EXIT
+                mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
+                sem_post(&orden_proceso_exit);
                 break;
             
             case WAIT_RECURSO:
@@ -367,7 +368,7 @@ void consola_interactiva(char* ruta_archivo){
 }
 
 // esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
-uint32_t iniciar_proceso(char *path){
+void iniciar_proceso(char *path){
 
     t_pcb *proceso = malloc(sizeof(t_pcb));
 
@@ -380,11 +381,8 @@ uint32_t iniciar_proceso(char *path){
 
     log_iniciar_proceso(logger, proceso->pid);
 
-    pid++;
-
-    // dictionary_put(pcb_dictionary, pid, proceso);
     list_add(pcb_list, proceso);
-    return proceso->pid;
+    pid++;
 }
 
 /*
@@ -464,7 +462,7 @@ void* control_quantum(void* tipo_algoritmo){
 
 
         mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
-        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
+        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
         sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
         // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
@@ -508,7 +506,11 @@ void enviar_proceso_a_cpu(){
 // ------- RECUPERAR CONTEXTO ANTE DESALOJO DE PROCESO DE CPU
 void recupera_contexto_proceso(t_sbuffer* buffer){
     t_pcb* proceso = mqueue_peek(monitor_RUNNING); 
-    buffer_read_registros(buffer, proceso->registros);
+    buffer_read_registros(buffer, &(proceso->registros));
+    char *mensaje = (char *)malloc(128);
+    sprintf(mensaje, "valor de PC: %u, valor de AX: %u, valor de BX: %u", proceso->registros.PC, proceso->registros.AX, proceso->registros.BX);
+    log_info(logger, "%s", mensaje);
+    free(mensaje);
 }
 // ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -537,63 +539,47 @@ void *planificar_new_to_ready(void *archivo_config)
     }
 }
 
-void *planificar_all_to_exit(void *args)
-{
-    while (1){   
-        // OTRA SOLUCION: 
-        /* creo que sería mejor agregar desde cada lugar desde donde se finalice el proceso (corto_plazo o consola) el pcb del proceso a la cola EXIT
-        y luego en este hilo trabajar con los procesos que van llegando a la cola EXIT (con semáforos y demás), y trabajar con cada caso:
+void *planificar_all_to_exit(void *args){
 
-        Casos que pueden darse por FINALIZAR_PROCESO desde consola:
-            A) si el proceso tiene estado RUNNING se manda interrupcion a CPU para que desaloje  
-                => al desalojar de CPU se devuelve a kernel (cod_op INTERRUPCION) se actualiza luego su ctx y recién ahí se liberan recursos ¿no?
-            B) si el proceso tiene estado READY se lo saca de la cola (con semáforos), se liberan recursos y se aumenta en uno el grado de multiprogramación
-            C) si el proceso tiene estado NEW sólo se lo saca de la cola (con semáforos) y se libera memoria
-            E) si está bloqueado VER (un quilombo)
-        Casos que pueden darse por error (recurso inexistente, i/o no conectada a kernel, ...), es decir, errores durante la ejecución del proceso (corto plazo) o porque se finalizó el proceso correctamente (instrucción CPU)
-            A) se supone que cuando se agrega el PRC a EXIT desde corto plazo, ya se actualizó su ctx de ejecución en el momento en que CPU devolvió el PROCESO, así que sólo se liberarían recursos y memoria
+    /* 
+    ----- PARA TODOS LOS OTROS CASOS, SEA DESDE CONSOLA O DESDE CORTO PLAZO, PREVIAMENTE SE AGREGÓ EL PRC DIRECTAMENTE A LA COLA EXIT, sacándolo primero de la cola desde donde se encuentra actualmente, haciendo actualizado ya su ctx en caso de corresponer Y SE MANEJA EL PASO A PASO DESDE ESTE HILO -----
+    1. NEW: se libera memoria, se pasa a estado EXIT
+    2. READY:  se libera memoria y recursos utilizados por el proceso (en caso de tenerlos), se aumenta un grado de multiprogramación, se pasa a estado EXIT
+    3. RUNNING: se libera memoria, recursos utilizados por el proceso (en caso de tenerlos), se aumenta un grado de multiprogramacion, se pasa a estado EXIT
+    4. BLOCKED: se lo saca de la cola desde donde esté bloqueado (analizar si ese puntero a cola se guarda en el pcb), se libera memoria y recursos, ¿se aumenta grado de multiprogramacion?, se pasa a estado EXIT
+    5. EXIT: no se hace nada, ya está en EXIT...     
 
-        Todos estos casos se reducen a lo siguiente (evaluando acción según estado del proceso):
-            0. en cualquier de los casos, lo que se hace antes de pasarlo a la cola EXIT, es sacarlo de la cola desde donde se encuentra actualmente!!!!
-            I. RUNNING: cuando se ejecuta finalizar_proceso desde consola a un proceso que tiene estado running, sólo se manda la interrupción a CPU para que lo libere 
-                    (desde corto plazo, una vez devuelto a kernel con su respectivo motivo de desalojo (ej: interrupcion_finalizar_proceso), se lo saca de la cola RUNNING, 
-                    ¿se liberan recursos acá en caso de corresponder?, se lo agrega a la cola EXIT con ctx ya actualizado y se le deja el estado aún en RUNNING)
-                    (analizar liberar los recursos, en caso de que corresponda, o ver si se puede hacer desde este hilo EXIT)
-            ----- A PARTIR DE ACÁ: PARA TODOS LOS OTROS CASOS, SEA DESDE CONSOLA O DESDE CORTO PLAZO, SE AGREGA EL PRC DIRECTAMENTE A LA COLA EXIT, 
-                    sacándolo primero de la cola desde donde se encuentra actualmente Y SE MANEJA EL PASO A PASO DESDE ESTE HILO -----
-            1. NEW: se libera memoria, se pasa a estado EXIT
-            2. READY: se aumenta un grado de multiprogramación, se libera memoria, se pasa a estado EXIT
-            3. RUNNING: (ya realizado todo lo del caso I o por instrucción o error en momento de ejecución donde el proceso se lo devolvió a kernel y se realizaron los mismos pasos que en el caso I),
-                        se libera memoria, se pasa a estado EXIT
-            4. BLOCKED: se lo saca de la cola desde donde esté bloqueado (analizar si ese puntero a cola se guarda en el pcb), se libera memoria, se pasa a estado EXIT
-            5. EXIT: no se hace nada, ya está en EXIT...     
-
-            luego, se los saca de la cola EXIT
-        */
-
-        /*
-        // TODO: analizar que pasa si se ejecutan dos finalizar procesos uno tras otro? analizar semaforo.
-        if (FINALIZACION.FLAG_FINALIZACION)
-        {
-            if (obtener_cola(FINALIZACION.PID) == cola_RUNNING)
-            {
-                // mensaje de interrupt al cpu
-                queue_push(cola_EXIT, queue_peek(cola_RUNNING));
-                queue_pop(cola_RUNNING);
+    luego, para todos los casos, se los saca de la cola EXIT
+    */
+    while (1){
+        sem_wait(&mutex_planificacion_pausada);
+        if (!PLANIFICACION_PAUSADA){ // lectura
+            sem_post(&mutex_planificacion_pausada);
+            sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
+            t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
+            switch (proceso_exit->estado){
+                case NEW:
+                    // TODO: libero memoria
+                    proceso_exit->estado = EXIT;
+                    log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
+                    break;
+                case READY:
+                case RUNNING:
+                case BLOCKED:
+                    // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
+                    op_code estado_actual = proceso_exit->estado;
+                    // TODO: libero memoria
+                    // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
+                    sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
+                    proceso_exit->estado = EXIT;
+                    log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
+                    break;
+                default:
+                    break;
             }
-            else
-            {
-                queue_push(cola_EXIT, queue_peek(obtener_cola(FINALIZACION.PID)));
-                queue_pop(obtener_cola(FINALIZACION.PID));
-            }
-            if (obtener_cola(FINALIZACION.PID) != cola_NEW)
-            {
-                // habilitar espacio de multiprogramación (esto será muy probablemente un semáforo)
-            }
-            // poner error si se encuentra en la cola_EXIT
-            FINALIZACION.FLAG_FINALIZACION = FALSE;
-        }
-        */
+            mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
+        } else
+            sem_post(&mutex_planificacion_pausada);
     }
     return NULL;
 }

@@ -3,8 +3,7 @@
 #include <commons/config.h>
 #include <utils/buffer.h>
 
-typedef struct
-{
+typedef struct{
     char* ip_memoria;
     char* puerto_memoria;
     char* puerto_escucha_dispatch; 
@@ -12,6 +11,11 @@ typedef struct
     char* cantidad_entradas_tlb;
     char* algoritmo_tlb;
 } config_struct;
+
+typedef struct {
+    uint32_t pid;
+    op_code motivo_interrupcion;
+} t_pic;
 
 extern config_struct config;
 

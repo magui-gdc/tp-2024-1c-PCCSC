@@ -14,7 +14,8 @@ typedef enum
 	EXIT_PROCESO, // cpu - kernel
 	WAIT_RECURSO, // cpu - kernel
 	SIGNAL_RECURSO, // cpu - kernel 
-	FIN_QUANTUM // kernel - cpuInterrupt
+	FIN_QUANTUM, // kernel - cpuInterrupt
+	FINALIZAR_PROCESO
 }op_code;
 
 #endif

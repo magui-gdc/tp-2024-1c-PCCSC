@@ -73,13 +73,15 @@ void *atender_cliente(void *cliente)
 
             // TODO: leer desde el proceso la próxima instruccion!!!!
             char nombreArchivo[256];
-            snprintf(nombreArchivo, sizeof(nombreArchivo), "procesos/%d.txt", pid_proceso); // PROVISORIO!
+            snprintf(nombreArchivo, sizeof(nombreArchivo), "src/procesos/%d.txt", pid_proceso); // PROVISORIO!
+            
+            log_info(logger, nombreArchivo);
 
             int lineaActual = 0, lee_instruccion = 0;
 
             char *instruccion = NULL;
             size_t len = 0;
-            FILE *script = fopen(nombreArchivo, "rb");
+            FILE *script = fopen(nombreArchivo, "r");
 
             if (script == NULL)
                 log_error(logger, "No se encontro ningun archivo con el nombre indicado...");
@@ -99,10 +101,10 @@ void *atender_cliente(void *cliente)
                 
                 if(lee_instruccion){
                     t_sbuffer *buffer_instruccion = buffer_create(
-                        strlen(instruccion)
+                        (uint32_t)strlen(instruccion) + sizeof(uint32_t)
                     );
 
-                    buffer_add_string(buffer_instruccion, strlen(instruccion), instruccion);
+                    buffer_add_string(buffer_instruccion, (uint32_t)strlen(instruccion), instruccion);
                     cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
 
                     buffer_destroy(buffer_lectura);

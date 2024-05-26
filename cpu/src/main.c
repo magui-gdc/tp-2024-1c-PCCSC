@@ -160,8 +160,9 @@ void ciclo_instruccion(int conexion_kernel){
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
     // TODO: MMU en caso de traducción dire. lógica a dire. física
+    leido[strcspn(leido, "\n")] = '\0';
     char *mensaje = (char *)malloc(128);
-    sprintf(mensaje, "ESTAMOS LEYENDO LA SIGUIENTE LINEA DE INSTRUCCION %s", leido);
+    sprintf(mensaje, "CPU: LINEA DE INSTRUCCION %s", leido);
     log_info(logger, "%s", mensaje);
     free(mensaje);
 
@@ -178,7 +179,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
         if (strcmp(comando, "SUM") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
-            SUM(parametro1, parametro2);
+            SUM(parametro1, parametro2, logger);
         } else if (strcmp(comando, "SUB") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
@@ -189,7 +190,11 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer *buffer_desalojo = NULL;
             desalojo_proceso(&buffer_desalojo, conexion_kernel, EXIT_PROCESO);
             // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
-        } 
+        } else if (strcmp(comando, "JNZ") == 0){
+            char *registro = tokens[1]; 
+            char *proxInstruccion = tokens[2]; 
+            jnz(registro, proxInstruccion);
+        }
         // TODO: SEGUIR
     }
     string_array_destroy(tokens);
