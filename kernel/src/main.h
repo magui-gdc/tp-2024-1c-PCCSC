@@ -1,19 +1,30 @@
 #include <utils/utilsCliente.h>
 #include <utils/utilsServer.h>
 #include <commons/config.h>
-#include <utils/config.h>
 #include <commons/string.h>
+#include <utils/buffer.h>
 
+// ---------- CONSTANTES ---------- //
+const char *estado_proceso_strings[] = {
+    "NEW", 
+    "READY", 
+    "RUNNING", 
+    "BLOCKED", 
+    "EXIT"
+};
+
+
+// --------- DECLARACION ESTRUCTURAS KERNEL --------- //
+typedef void (*fc_puntero)(); // PUNTERO A FUNCION
 typedef enum {
     NEW, 
     READY, 
     RUNNING, 
     BLOCKED, 
-    TERMINATED
-} e_estado_proceso;
+    EXIT
+} e_estado_proceso; // ESTADOS PROCESOS
 
-typedef struct
-{
+typedef struct{
     char* puerto_escucha;
     char* ip_memoria;
     char* puerto_memoria;
@@ -22,10 +33,7 @@ typedef struct
     char* puerto_cpu_interrupt;
     char* algoritmo_planificacion;
     int quantum;
-    //char** recursos;
-    //char** instancias; 
-    //int grado_multiprogramacion;
-} config_struct;
+} config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
 typedef struct {
     uint32_t pid;
@@ -33,14 +41,32 @@ typedef struct {
     uint8_t quantum;
     t_registros_cpu registros;
     e_estado_proceso estado;
-} t_pcb;
+} t_pcb; // PCB
 
-extern config_struct config;
-extern t_list* pcb_list; // lista dinámica que contiene los PCB de los procesos creados
-extern uint32_t pid; // contador para determinar el PID de cada proceso creado
+typedef struct {
+    uint8_t FLAG_FINALIZACION;
+    uint32_t PID;
+} prcs_fin;
 
-
+// --------- FUNCIONES DE CONFIGURACION --------- //
 void cargar_config_struct_KERNEL(t_config*);
+
+// --------- FUNCIONES PARA HILOS PRINCIPALES --------- //
 void* consola_kernel(void*);
 void* planificar_corto_plazo(void*);
 void* planificar_largo_plazo(void*);
+void* planificar_new_to_ready(void*);
+void* planificar_all_to_exit(void*);
+ 
+// ---------  --------- //
+void iniciar_proceso(char*);
+void consola_interactiva(char*);
+void enviar_proceso_a_cpu();
+void recupera_contexto_proceso(t_sbuffer* buffer);
+
+// --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
+fc_puntero obtener_algoritmo_planificacion();
+void algortimo_fifo();
+void algoritmo_rr();
+void algoritmo_vrr();
+void* control_quantum(void*);

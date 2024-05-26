@@ -1,6 +1,6 @@
 #include <utils/utilsServer.h>
 #include <commons/config.h>
-#include <utils/config.h>
+#include <utils/buffer.h>
 
 /*
 PUERTO_ESCUCHA=8002
@@ -15,7 +15,7 @@ typedef struct {
     char* tam_memoria;
     char* tam_pagina;
     char* path_instrucciones;
-    char* retardo_respuesta
+    char* retardo_respuesta;
 } config_struct;
 
 extern config_struct config;

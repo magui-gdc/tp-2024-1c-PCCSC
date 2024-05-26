@@ -1,19 +1,9 @@
 #include <utils/utilsServer.h>
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
-#include <utils/config.h>
+#include <utils/buffer.h>
 
-/*
-IP_MEMORIA=127.0.0.1
-PUERTO_MEMORIA=8002
-PUERTO_ESCUCHA_DISPATCH=8006
-PUERTO_ESCUCHA_INTERRUPT=8007
-CANTIDAD_ENTRADAS_TLB=32
-ALGORITMO_TLB=FIFO
-*/
-
-typedef struct
-{
+typedef struct{
     char* ip_memoria;
     char* puerto_memoria;
     char* puerto_escucha_dispatch; 
@@ -22,8 +12,20 @@ typedef struct
     char* algoritmo_tlb;
 } config_struct;
 
+typedef struct {
+    uint32_t pid;
+    op_code motivo_interrupcion;
+} t_pic;
+
 extern config_struct config;
 
 void cargar_config_struct_CPU(t_config*);
 
-void* recibir_IO(void*);
+void inicializar_registros();
+
+void* recibir_interrupcion(void*);
+
+// ---------------- FCS. CICLO INSTRUCCION ----------------
+void ciclo_instruccion(int conexion_kernel);
+void ejecutar_instruccion(char* leido, int conexion_kernel);
+void desalojo_proceso(t_sbuffer** buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo);
