@@ -15,7 +15,9 @@ typedef enum
 	WAIT_RECURSO, // cpu - kernel
 	SIGNAL_RECURSO, // cpu - kernel 
 	FIN_QUANTUM, // kernel - cpuInterrupt
-	FINALIZAR_PROCESO
+	FINALIZAR_PROCESO,
+	NO_FINALIZADO,
+    DESALOJAR_PROCESO
 }op_code;
 
 

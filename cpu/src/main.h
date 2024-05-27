@@ -29,3 +29,4 @@ void* recibir_interrupcion(void*);
 void ciclo_instruccion(int conexion_kernel);
 void ejecutar_instruccion(char* leido, int conexion_kernel);
 void desalojo_proceso(t_sbuffer** buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo);
+void check_interrupt(uint32_t proceso_pid, int conexion_kernel);

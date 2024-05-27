@@ -28,6 +28,12 @@ void buffer_add(t_sbuffer *buffer, void *data, uint32_t size);
 // Guarda size bytes del principio del buffer en la dirección data y avanza el offset
 void buffer_read(t_sbuffer *buffer, void *data, uint32_t size);
 
+// Agrega un int al buffer
+void buffer_add_int(t_sbuffer *buffer, int data);
+
+// Lee un int del buffer y avanza offset
+int buffer_read_int(t_sbuffer *buffer);
+
 // Agrega un uint32_t al buffer
 void buffer_add_uint32(t_sbuffer *buffer, uint32_t data);
 

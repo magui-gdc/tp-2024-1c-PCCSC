@@ -33,5 +33,4 @@ void destruir_monitores(void);
 //void crear_colas(void); // OBSOLETO CON USO DE MONITORES
 //void destruir_colas();
 //t_queue *obtener_cola(uint32_t pid_buscado); //ANALIZAR CON PASE A MONITORES ¿?
-//void* buscar_pcb_por_pid(uint32_t);
 //t_queue* obtener_cola(uint32_t);

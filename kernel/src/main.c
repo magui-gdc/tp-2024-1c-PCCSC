@@ -190,48 +190,57 @@ void *consola_kernel(void *archivo_config)
             else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *pid_char = tokens[1];
                 if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0){
+                    printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                     
+                    // 1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
                     sem_wait(&mutex_planificacion_pausada);
+                    int planificacion_registrada = PLANIFICACION_PAUSADA;
                     PLANIFICACION_PAUSADA = 1;
                     sem_post(&mutex_planificacion_pausada);
 
-                    t_pcb* proceso_buscado = (t_pcb*)buscar_pcb_por_pid(pid_char);
+                    // 2. pregunto por su estado
+                    t_pcb* proceso_buscado = (t_pcb*)buscar_pcb_por_pid((uint32_t)atoi(pid_char));
 
-                    if(proceso_buscado->estado != EXIT){
+                    if (!proceso_buscado){
+                        char *mensaje = (char *)malloc(128);
+                        sprintf(mensaje, "obtengo proceso %u, en estado: %s", proceso_buscado->pid, (char *)estado_proceso_strings[proceso_buscado->estado] );
+                        log_info(logger, "%s", mensaje);
 
-                        
-                        t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
-                        enviar_interrupcion_a_cpu(interrupt);
-                        
-                        t_buffer* pcb_desalojado = cargar_buffer(conexion_cpu_interrupt); //RECIBO EL PROCESO DESALOJADO?
-                        
-                        //if(proceso_buscado ->estado == RUNNING){ NO ENTENDI EL CASO BORDE... PERO DEJO LAS COSAS PLANTEADAS PARA PODER DESARROLLARLO.
-                            proceso_buscado->interrupido = FINALIZAR_PROCESO;
-                            mqueue_push(monitor_EXIT, proceso_buscado);
-                        //}
-                        sem_post(&orden_proceso_exit);
-                    }
-                    /*
-                    que pasa si finalizo proceso?
-                    1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
-                    2. pregunto por su estado
-                    RUNNING
-                        -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
-                            a) actualizo un nuevo atributo del pcb que sea finalizar, entonces que dicho valor se setee en 0 al crear el proceso, se cambie a 1 desde acá  
-                                y que se consulte su valor desde el manejo del desalojo del proceso, para que, en caso de ser = 1, no siga su desalojo común sino que lo mande a FINALIZAR_PROCESO
-                            b) mando interrupción a cpu con operacion FINALIZAR_PROCESO para que se lo desaloje (send de kernel a CPU INTERRUPT) 
-                            c) luego el corto plazo, con su mensaje de desalojo FINALIZAR_PROCESO, lo va a mandar a la cola EXIT y va a hacer el resto de las acciones que se hacen en EXIT (incluyendo el sem_post(&orden_proceso_exit)!!!!
-                    EXIT: no hago nada.
-                    CUALQUIER OTRO ESTADO: se lo saca de su cola actual, se lo pasa a EXIT y se activa semáforo sem_post(&orden_proceso_exit) para indicarle al plani de largo plazo que se ingresó un proceso a la cola EXIT!
-                    3. inicio la planificacion
-                    */
+                        // 3. trabajo la solicitud de finalización según su estado
+                        if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
+                            
+                            // RUNNING -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
+                            if(proceso_buscado->estado == RUNNING){ 
+                                // cuando el proceso está en running hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
+                                if(proceso_buscado->desalojo == SIN_DESALOJAR){ 
+                                    // cuando el proceso está todavía en CPU mando interrupción
+                                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
+                                    enviar_interrupcion_a_cpu(interrupt);
+                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION; // por las dudas de que ya haya desalojado antes de recibir la INT para que se lo finalice igual
+                                    log_info(logger, "mandaste interrupcion con FINALIZAR_PROCESO");
+                                } else if (proceso_buscado->desalojo == DESALOJADO) {
+                                    // cuando el proceso fue desalojado de CPU pero todavía no se trató su motivo de desalojo
+                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION; 
+                                    log_info(logger, "PEDIDO_FINALIZACION");
+                                    // la idea es que desde corto plazo sólo se procese su motivo de desalojo cuando no haya un pedido de finalizacion! y si hay un pedido de finalización, se mande el proceso a EXIT!
+                                }
+                                // en el caso de RUNNING, el proceso de desalojo (recibir el código de operación) se maneja desde CORTO PLAZO!
+                            } else { 
+                                // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
+                                t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado->pid, proceso_buscado->estado); // lo saco de su cola actual
+                                mqueue_push(monitor_EXIT, proceso_encontrado); // lo agrego a EXIT
+                                sem_post(&orden_proceso_exit);
+                            }
+                        }
+                        free(mensaje);
+                    } else
+                        printf("pid no existente");
 
+                    // 4. inicio la planificacion
                     sem_wait(&mutex_planificacion_pausada);
-                    PLANIFICACION_PAUSADA = 0;
+                    PLANIFICACION_PAUSADA = planificacion_registrada; // la vuelvo a setear a su valor anterior
                     sem_post(&mutex_planificacion_pausada);
                 
-
-                    printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                 }
             }
             else if (strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2)
@@ -289,8 +298,7 @@ void *consola_kernel(void *archivo_config)
     return NULL;
 }
 
-void *buscar_pcb_por_pid(uint32_t pid_buscado)
-{
+void *buscar_pcb_por_pid(uint32_t pid_buscado){
     bool comparar_pid(void *elemento){
         t_pcb *pcb = (t_pcb *)elemento;
         return pcb->pid == pid_buscado;
@@ -301,10 +309,10 @@ void *buscar_pcb_por_pid(uint32_t pid_buscado)
 // definicion función hilo corto plazo
 void *planificar_corto_plazo(void *archivo_config){
     while (1){
+        sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
-            sem_post(&mutex_planificacion_pausada);
-            sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
+            //sem_post(&mutex_planificacion_pausada); // lo libero luego de cambiar de cola dentro de cada algoritmo de planificacion: así evito que entre un FINALIZAR_PROCESO antes de que se realice el pase
 
             // 1. selecciona próximo proceso a ejecutar
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
@@ -316,34 +324,44 @@ void *planificar_corto_plazo(void *archivo_config){
 
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
             int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
-            
+            t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
+            proceso_desalojado->desalojo = DESALOJADO; // TODO: corresponde semáforo? porque dicho valor se modifica/lee desde finalizar_proceso tmb
+
             // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
-            // CONTINÚA SÓLO SI LA PLANIFICACION NO ESTÁ PAUSADA!!!
             sem_wait(&mutex_planificacion_pausada);
+            // CONTINÚA SÓLO SI LA PLANIFICACION NO ESTÁ PAUSADA!!!
             while (PLANIFICACION_PAUSADA) {
                 sem_post(&mutex_planificacion_pausada);
                 sem_wait(&mutex_planificacion_pausada);
             }
-            sem_post(&mutex_planificacion_pausada);
+            // TODO: el sem_post(&mutex_planificacion_pausada) hacerlo desde cada mensaje de desalojo luego de mover de cola el proceso, en caso de corresponder!
+            
+            if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION)
+                mensaje_desalojo = FINALIZAR_PROCESO; // esto sólo se da cuando se lo finaliza desde consola 
 
             switch (mensaje_desalojo){
             case EXIT_PROCESO:
+            case FINALIZAR_PROCESO:
                 log_info(logger, "se termino de ejecutar proceso");
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
+                sem_post(&mutex_planificacion_pausada); // LIBERO RECIÉN ACÁ, y luego de procesado el desalojo se puede DETENER/INICIAR planificacion O FINALIZAR_PROCESO
+                // TODO: log de finalización de proceso!!!! (según MENSAJE_DESALOJO)
                 // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
                 sem_post(&orden_proceso_exit);
                 break;
+
             
             case WAIT_RECURSO:
                 // 1. carga el buffer (1. paso en la mayoría de los mensajes de desalojo )
                 // 2. lee únicamente (debería ser guardado en primer lugar) el nombre del recurso que pide la CPU utilizar
                 // 3. valida que dicho recurso esté disponible: 
                     /*
-                    A) si no está disponible => bloquea (RUNNING->EXIT), informa a CPU, libera grado de multiprogramacion (liberando en memoria????) y ahora si ejecuta la función recuperar contexto del buffer que ya se encarga de actualizar en PCB
+                    A) si no está disponible => bloquea (RUNNING->BLOCKED_RECURSO), informa a CPU y ahora si ejecuta la función recuperar contexto del buffer que ya se encarga de actualizar en PCB
                     B) si está disponible => le resta una instancia al recurso y devuelve proceso a CPU (no hace falta seguir leyendo del buffer)
                     C) si no existe el nombre del recurso => recupera contexto del buffer actualizando PCB, (RUNNING->EXIT) ... mismo pasos que proceso EXIT
+                    TODO: para cada caso sem_post(&mutex_planificacion_pausada) apenas movimos de cola o al ppio si no corresponde mover de cola
                     */
                 // 4. libera buffer y otros recursos de memoria dinámica!!!!
                 break;
@@ -355,12 +373,16 @@ void *planificar_corto_plazo(void *archivo_config){
                 log_info(logger, "se termino el quantum.");
                 t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_desalojo);
+                proceso_desalojado->estado = READY;
                 mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
-                sem_post(&contador_grado_multiprogramacion);
-                mqueue_pop(monitor_INTERRUPCIONES);//Elimina la interrupcion que ya se ejecutó.
+                sem_post(&mutex_planificacion_pausada);
+                log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
+                // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
+                // mqueue_pop(monitor_INTERRUPCIONES);// Elimina la interrupcion que ya se ejecutó. NO SE COMPARTEN ESTRUCTURAS ENTRE MÓDULOS A MENOS QUE SE PASEN POR SOCKET, esto se debe hacer desde el lado de CPU!
                 break;
             // (...)
             }
+            proceso_desalojado->desalojo = SIN_DESALOJAR; // lo vuelvo a su estado inicial por si vuelve a READY y pasa a bloqueado y luego a READY nuevamente
             /*
             A. PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO (recurso o I/O no disponible)=> ver si se tiene que delegar en otro hilo que haga el mediano plazo
             B. PUEDE PASAR QUE FINALICE EL PROCESO => mandarlo a cola EXIT
@@ -368,8 +390,10 @@ void *planificar_corto_plazo(void *archivo_config){
             C. PUEDE PASAR QUE SE DESALOJE POR FIN DE QUANTUM: en dicho caso, se vuelve a pasar el proceso al FIN de la cola READY
             */
         }
-        else
+        else{
             sem_post(&mutex_planificacion_pausada);
+            sem_post(&orden_planificacion); // así vuelve a cargar en espera el proceso que NO se ejecutó por estar detenida la planificación
+        }
     }
 }
 
@@ -410,6 +434,20 @@ void consola_interactiva(char* ruta_archivo){
     }*/
 }
 
+void inicializar_registros(t_pcb* proceso) {
+    proceso->registros.PC = 0;
+    proceso->registros.AX = 0;
+    proceso->registros.BX = 0;
+    proceso->registros.CX = 0;
+    proceso->registros.DX = 0;
+    proceso->registros.EAX = 0;
+    proceso->registros.EBX = 0;
+    proceso->registros.ECX = 0;
+    proceso->registros.EDX = 0;
+    proceso->registros.SI = 0;
+    proceso->registros.DI = 0;
+}
+
 // esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
 void iniciar_proceso(char *path){
 
@@ -419,9 +457,13 @@ void iniciar_proceso(char *path){
     proceso->quantum = config.quantum;
     proceso->program_counter = 0; // arranca en 0?
     proceso->pid = pid;
-    proceso->path = path;
-    proceso->recursos = [];
-    proceso->interrupido = 0;
+    inicializar_registros(proceso);
+    strncpy(proceso->path, path, sizeof(proceso->path) - 1); // -1 para que no desborde
+    proceso->path[sizeof(proceso->path) - 1] = '\0'; // en el último lugar se agrega caracter nulo
+    for (int i = 0; i < 3; i++) { // TODO: por ahora consideramos 3 recursos, considerar la cantidad debe ser determinada en tiempos de ejecucion según la info del config kernel
+        proceso->recursos[i] = 0; // Inicializar todos los recursos a 0
+    }
+    proceso->desalojo = SIN_DESALOJAR;
 
     mqueue_push(monitor_NEW, proceso);
 
@@ -429,6 +471,46 @@ void iniciar_proceso(char *path){
 
     list_add(pcb_list, proceso);
     pid++;
+}
+
+t_pcb* extraer_proceso(uint32_t pid_proceso, e_estado_proceso estado) {
+    t_mqueue* monitor;
+
+    // Determinar el monitor correspondiente según el estado
+    switch (estado) {
+        case NEW:
+            monitor = monitor_NEW;
+            break;
+        case READY:
+            monitor = monitor_READY;
+            break;
+        case RUNNING:
+            monitor = monitor_RUNNING;
+            break;
+        case BLOCKED:
+            monitor = monitor_BLOCKED;
+            break;
+        case EXIT:
+            monitor = monitor_EXIT;
+            break;
+        default:
+            return NULL; // Estado inválido
+    }
+
+    // Hago toda la zona crítica ya que pasa elementos de una cola a otra temporal hasta encontrar proceso y luego lo devuelve todo a su lugar
+    sem_wait(&(monitor->mutex)); 
+
+    // Función de condición para buscar el proceso por PID
+    bool buscar_por_pid(void* data) {
+        return ((t_pcb*)data)->pid == pid_proceso;
+    }
+
+    // busca y elimina procesode la cola
+    t_pcb* proceso_encontrado = (t_pcb*)list_remove_by_condition(monitor->cola->elements, buscar_por_pid);
+
+    sem_post(&(monitor->mutex)); 
+
+    return proceso_encontrado;
 }
 
 // ------------- FIN FCS. HILO CONSOLA KERNEL -------------
@@ -443,7 +525,6 @@ fc_puntero obtener_algoritmo_planificacion(){
     if(strcmp(config.algoritmo_planificacion, "VRR") == 0){
         cola_READY_VRR = queue_create();
         return &algoritmo_vrr;
-        
     }
     return NULL;
 }
@@ -455,6 +536,7 @@ void algortimo_fifo() {
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
     primer_elemento->estado = RUNNING; 
     mqueue_push(monitor_RUNNING, primer_elemento);
+    sem_post(&mutex_planificacion_pausada);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
@@ -480,48 +562,48 @@ void algoritmo_vrr(){
 }
 
 void* control_quantum(void* tipo_algoritmo){
-        int duracion_quantum = config.quantum;
-        t_pcb* primer_elemento;
-        int quantum_por_ciclo;
-        // Pregunta si es VRR y si hay algún proceso en la cola de pendientes de VRR (con quantum menor).
-        if(strcmp((char*)tipo_algoritmo, "VRR") == 0 && !queue_is_empty(cola_READY_VRR)){
-            primer_elemento = queue_pop(cola_READY_VRR); // solo la modificamos desde aca!!
-            quantum_por_ciclo = primer_elemento->quantum; // toma el quantum restante de su PCB
-        } else {
-            primer_elemento = mqueue_pop(monitor_READY);
-            quantum_por_ciclo = duracion_quantum / 1000; 
-        }
+    int duracion_quantum = config.quantum;
+    t_pcb* primer_elemento;
+    int quantum_por_ciclo;
+    // Pregunta si es VRR y si hay algún proceso en la cola de pendientes de VRR (con quantum menor).
+    if(strcmp((char*)tipo_algoritmo, "VRR") == 0 && !queue_is_empty(cola_READY_VRR)){
+        primer_elemento = queue_pop(cola_READY_VRR); // solo la modificamos desde aca!!
+        quantum_por_ciclo = primer_elemento->quantum; // toma el quantum restante de su PCB
+    } else {
+        primer_elemento = mqueue_pop(monitor_READY);
+        quantum_por_ciclo = duracion_quantum / 1000; 
+    }
 
-        primer_elemento->estado = RUNNING; 
+    primer_elemento->estado = RUNNING; 
 
 
-        mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
-        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
-        sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
+    mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
+    sem_post(&mutex_planificacion_pausada);
+    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
+    sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
-        // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
-        // 2. si se acabo el quantum, manda INTERRUPCION A CPU        
-        for(int i = quantum_por_ciclo; i<=0; i--){ 
-            sleep(1);
-            // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
-            if(primer_elemento->estado != RUNNING){ // si ya no esta en running (se desalojó el proceso por otro motivo que NO es FIN DE QUANTUM)
-                if(strcmp(tipo_algoritmo, "VRR") == 0){
-                 /* A.VRR)
-                    1. cargar el quantum restante (i) en el PCB del proceso
-                    2. mandar el proceso a la cola READY_VRR
-                   */
-                }
-                pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
+    // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
+    // 2. si se acabo el quantum, manda INTERRUPCION A CPU        
+    for(int i = quantum_por_ciclo; i<=0; i--){ 
+        sleep(1);
+        // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
+        if(primer_elemento->estado != RUNNING){ // si ya no esta en running (se desalojó el proceso por otro motivo que NO es FIN DE QUANTUM)
+            if(strcmp(tipo_algoritmo, "VRR") == 0){
+                /* A.VRR)
+                1. cargar el quantum restante (i) en el PCB del proceso
+                2. mandar el proceso a la cola READY_VRR
+                */
             }
+            pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
         }
-        primer_elemento->interrupido = DESALOJAR_PROCESO;
-        primer_elemento->estado = READY;
-        t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
-        enviar_interrupcion_a_cpu(interrupt);
-        // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
-        // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
-        
-        // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
+    }
+    //primer_elemento->estado = READY; esto se maneja desde corto plazo luego de que se desaloja el proceso
+    t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
+    enviar_interrupcion_a_cpu(interrupt);
+    // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
+    // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
+    
+    // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
     return NULL;
 }
 
@@ -572,8 +654,7 @@ void *planificar_new_to_ready(void *archivo_config)
     while (1)
     {
         sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA)
-        { // lectura
+        if (!PLANIFICACION_PAUSADA){ // lectura
             sem_post(&mutex_planificacion_pausada);
             if (!mqueue_is_empty(monitor_NEW)){
                 sem_wait(&contador_grado_multiprogramacion);
@@ -604,60 +685,55 @@ void *planificar_all_to_exit(void *args){
     luego, para todos los casos, se los saca de la cola EXIT
     */
     while (1){
+        sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
-            sem_post(&mutex_planificacion_pausada);
-            sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
             t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
             switch (proceso_exit->estado){
                 case NEW:
-                    // TODO: libero memoria
                     proceso_exit->estado = EXIT;
-                    log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
+                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     liberar_proceso_en_memoria(proceso_exit->pid);
+                    log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
                     break;
                 case READY:
-                    //
-                    proceso_exit->estado = EXIT;
-                    log_cambio_estado_proceso(logger, proceso_exit->pid, "READY", "EXIT");
-                    liberar_proceso_en_memoria(proceso_exit->pid);
-                    sem_post(&contador_grado_multiprogramacion);
                 case RUNNING:
-                    proceso_exit->estado = EXIT;
-                    log_cambio_estado_proceso(logger, proceso_exit->pid, "RUNNING", "EXIT");
-                    liberar_proceso_en_memoria(proceso_exit->pid);
-                    sem_post(&contador_grado_multiprogramacion);
                 case BLOCKED:
                     // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
-                    op_code estado_actual = proceso_exit->estado;
-                    // TODO: libero memoria
-                    // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
-                    sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
                     proceso_exit->estado = EXIT;
+                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
+                    op_code estado_actual = proceso_exit->estado;
+                    liberar_proceso_en_memoria(proceso_exit->pid);
+                    // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
                     log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
+                    sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
                     break;
                 default:
+                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     break;
             }
             mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
-        } else
+        } else{
             sem_post(&mutex_planificacion_pausada);
+            sem_post(&orden_proceso_exit); // devuelvo el POST si la planificacion estaba desactivada y no se pudo continuar
+        }
     }
     return NULL;
 }
 
 void liberar_memoria_proceso(t_pcb* proceso){
     if (proceso != NULL){
-        free(proceso->path);
+        // LIBERAR MEMORIA = mandar socket a MEMORIA para que libere el espacio reservado para dicho proceso en la MEMORIA
+        //free(proceso->path); // no se asigna de forma dinámica
 
         // Si proceso->recursos es un array de punteros, se libera cada uno y luego el array
         /*for (int i = 0; i < proceso->recursos_count; i++) {
             free(proceso->recursos[i]);
         }*/ //ACA NECESITO SABER LA CANTIDAD DE RECURSOS
-        free(proceso->recursos);
+        // free(proceso->recursos); // no se asigna de forma dinámica
 
         // Finalmente, se libera el propio proceso
-        free(proceso);
+        //free(proceso); // no lo liberamos porque debe seguir guardado en EL PCB
     }   
 }
 

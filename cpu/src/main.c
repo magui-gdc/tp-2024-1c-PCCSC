@@ -10,7 +10,7 @@
 config_struct config;
 t_registros_cpu registros; 
 int conexion_memoria; // SOCKET
-int seguir_ejecucion = 1, proceso_instruccion_exit = 0; //FLAGS
+int seguir_ejecucion = 1, desalojo = 0; //FLAGS
 uint32_t pid_proceso; // PID PROCESO EN EJECUCIÓN
 
 int main(int argc, char* argv[]) {
@@ -57,7 +57,8 @@ int main(int argc, char* argv[]) {
             recibir_conexion(cliente_kernel);
             break;
         case EJECUTAR_PROCESO:
-            seguir_ejecucion = 1, proceso_instruccion_exit = 0;
+            seguir_ejecucion = 1;
+            desalojo = 0;
             log_info(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
@@ -139,34 +140,41 @@ void ciclo_instruccion(int conexion_kernel){
         t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
         uint32_t length;
         char* leido = buffer_read_string(buffer_de_instruccion, &length);
-        leido[strcspn(leido, "\n")] = '\0';
+        leido[strcspn(leido, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
 
         // ---------------------- ETAPA DECODE + EXECUTE  ---------------------- //
         // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
         ejecutar_instruccion(leido, conexion_kernel); 
         
+        // ---------------------- CHECK INTERRUPT  ---------------------- //
+        // 4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR) 
+        check_interrupt(pid_proceso, conexion_kernel);
+      
+        // IMPORTANTE: si por algun motivo se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0 + desalojo = 1;
+
+        // Se suma 1 al Program Counter
+        registros.PC++;
+
+        // libero recursos
         free(leido);
         buffer_destroy(buffer_de_instruccion);
-        // ---------------------- CHECK INTERRUPT  ---------------------- //
-        check_interrupt(pid_proceso, leido, conexion_kernel);
-        // 4. CHECK INTERRUPT: chequea interrupciones en PIC y las maneja (cola de interrupciones y las atiende por prioridad/orden ANALIZAR) 
-        // deberia preguntar si llego algo al socket de interrupt para el PID que se esta ejecutando y manejarla si ya el proceso no ejecutó EXIT ¿? , es decir sólo cuando !proceso_instruccion_exit
-        // si por algun momento se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0;
-
-        // IMPORTANTE: ante error o el manejo de alguna interrupción, también se podría cortar con la ejecución del proceso y devolverlo a kernel SIEMPRE A TRAVÉS DEL PUERTO DISPATCH
-        // Si no hay necesidad de abandonar la ejecución del proceso, una vez actualizado el contexto, suma 1 al Program Counter 
-        registros.PC++;
     } else {
         // TODO: PROBLEMAS
     }
 }
 
-void check_interrupt(char* pid_proceso, char* leido, int conexion_kernel){
-    t_pic* primera_interrupcion = (t_pic*)mqueue_peek(monitor_INTERRUPCIONES);
-    if(leido != "EXIT"){
-        if(primera_interrupcion->pid == pid_proceso){
-            desalojo_proceso(NULL, conexion_kernel, primera_interrupcion->motivo_interrupcion);
-        }    
+void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
+    if(!mqueue_is_empty(monitor_INTERRUPCIONES)){
+        t_pic* primera_interrupcion = (t_pic*)mqueue_pop(monitor_INTERRUPCIONES); // podría llegar más de una interrupción para el proceso en ejecución? analizar caso
+        // le hacemos POP desde acá porque no se comparten datos en la estructura MONITOR_INTERRUPCIONES entre kernel y cpu
+        if(desalojo == 0){ // procesamos la interrupción si todavía no se desalojó la ejecución del proceso durante el proceso de EJECUCIÓN
+            if(primera_interrupcion->pid == proceso_pid){
+                seguir_ejecucion = 0;
+                t_sbuffer *buffer_desalojo_interrupt = NULL;
+                desalojo_proceso(&buffer_desalojo_interrupt, conexion_kernel, primera_interrupcion->motivo_interrupcion);
+            }    
+        }
+        free(primera_interrupcion); // luego de leerla libero espacio en memoria
     }
 }
 
@@ -198,7 +206,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             SUB(parametro1, parametro2);
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
-            proceso_instruccion_exit = 1;
+            desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
             t_sbuffer *buffer_desalojo = NULL;
             desalojo_proceso(&buffer_desalojo, conexion_kernel, EXIT_PROCESO);
             // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
@@ -231,8 +239,7 @@ void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;
     while((interrupcion_kernel = esperar_cliente(servidor_interrupt)) != -1){
         int cod_op = recibir_operacion(interrupcion_kernel);
-        switch (cod_op)
-        {
+        switch (cod_op){
         case CONEXION:
             recibir_conexion(interrupcion_kernel);
             break;
@@ -242,17 +249,20 @@ void* recibir_interrupcion(void* conexion){
             t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
             
             // guarda datos del buffer (contexto de proceso)
-            t_pic *interrupcion_recibida = {buffer_read_uint32(buffer_interrupt), buffer_read_int(buffer_interrupt)}; // guardo PID del proceso que se va a ejecutar
-            
-            //ANTES DE AGREGAR LA INTERRUPCION A LA LISTA DE INTERRUPCIONES, DEBE VERIFICAR QUE EL PROCESO NO SE HAYA DESALOJADO PREVIAMENTE
-            
-            mqueue_push(monitor_INTERRUPCIONES, interrupcion_recibida);
-            // a modo de log: CAMBIAR DESPUÉS
-            char* mensaje = (char*)malloc(128);
-            sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
-            log_info(logger, "%s", mensaje);
-            free(mensaje);
-
+            t_pic *interrupcion_recibida = malloc(sizeof(t_pic));
+            if(interrupcion_recibida != NULL){
+                // guardo PID del proceso que se va a ejecutar
+                interrupcion_recibida->pid = buffer_read_uint32(buffer_interrupt);
+                interrupcion_recibida->motivo_interrupcion = buffer_read_int(buffer_interrupt);
+                
+                // ANTES DE AGREGAR LA INTERRUPCION A LA LISTA DE INTERRUPCIONES, DEBE VERIFICAR QUE EL PROCESO NO SE HAYA DESALOJADO PREVIAMENTE
+                mqueue_push(monitor_INTERRUPCIONES, interrupcion_recibida);
+                // a modo de log: CAMBIAR DESPUÉS
+                char* mensaje = (char*)malloc(128);
+                sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
+                log_info(logger, "%s", mensaje);
+                free(mensaje);
+            }
             break;
         case -1:
             log_error(logger, "cliente desconectado");
