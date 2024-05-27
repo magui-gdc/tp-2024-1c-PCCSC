@@ -194,15 +194,23 @@ void *consola_kernel(void *archivo_config)
                     sem_wait(&mutex_planificacion_pausada);
                     PLANIFICACION_PAUSADA = 1;
                     sem_post(&mutex_planificacion_pausada);
-                
+
                     t_pcb* proceso_buscado = (t_pcb*)buscar_pcb_por_pid(pid_char);
 
-                    if(proceso_buscado ->estado == RUNNING){
-                        proceso_buscado->interrupido = FINALIZAR_PROCESO;
+                    if(proceso_buscado->estado != EXIT){
+
+                        
+                        t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
+                        enviar_interrupcion_a_cpu(interrupt);
+                        
+                        t_buffer* pcb_desalojado = cargar_buffer(conexion_cpu_interrupt); //RECIBO EL PROCESO DESALOJADO?
+                        
+                        //if(proceso_buscado ->estado == RUNNING){ NO ENTENDI EL CASO BORDE... PERO DEJO LAS COSAS PLANTEADAS PARA PODER DESARROLLARLO.
+                            proceso_buscado->interrupido = FINALIZAR_PROCESO;
+                            mqueue_push(monitor_EXIT, proceso_buscado);
+                        //}
+                        sem_post(&orden_proceso_exit);
                     }
-                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
-                    enviar_interrupcion_a_cpu(interrupt);
-                    
                     /*
                     que pasa si finalizo proceso?
                     1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
@@ -507,6 +515,7 @@ void* control_quantum(void* tipo_algoritmo){
             }
         }
         primer_elemento->interrupido = DESALOJAR_PROCESO;
+        primer_elemento->estado = READY;
         t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
         enviar_interrupcion_a_cpu(interrupt);
         // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
