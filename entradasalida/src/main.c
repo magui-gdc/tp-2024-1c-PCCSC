@@ -27,6 +27,10 @@ int main(int argc, char* argv[]) {
     paquete(conexion_memoria);
     log_info(logger, "envie paquete a memoria");
 
+
+    sem_t mutex_config;
+    sem_init(mutex_config, 0, 1);
+
     ////////////////////////////////////////////////////////
 
 
@@ -57,7 +61,11 @@ int main(int argc, char* argv[]) {
 inicializar_io(char* nombre, t_config* archivo_config){
     t_io* interfaz = malloc(sizeof(t_io)); //TODO: free(interfaz)
     interfaz->nombre_id = nombre;
+    interfaz->archivo = archivo_config;
+    sem_wait(mutex_config);
     selector_carga_config(archivo_config);
+    //TODO: desarrollar funciones según tipo
+    sem_post(mutex_config);
 }
 
 //////////////// CARGAR CONFIG SEGUN DISPOSITIVO IO  ////////////////

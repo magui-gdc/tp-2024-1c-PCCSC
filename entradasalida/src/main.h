@@ -1,6 +1,7 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
 #include <utils/config.h>
+#include <semaphore.h>
 
 typedef struct
 {
@@ -29,6 +30,7 @@ typedef enum {
 typedef struct
 {
     char* nombre_id;
+    t_config* archivo;
 } t_io;
 
 
