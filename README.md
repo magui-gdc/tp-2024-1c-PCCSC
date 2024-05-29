@@ -1,7 +1,6 @@
-# tp-scaffold
+# Papas de Chedaaaar
 
-Esta es una plantilla de proyecto diseñada para generar un TP de Sistemas
-Operativos de la UTN FRBA.
+Hola, somos el grupo Papas Carrefour Classic Sabor Chedar, integrado por Bianca, Magalí, Martín, Mateo y Simón.
 
 ## Dependencias
 
