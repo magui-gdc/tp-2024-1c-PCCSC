@@ -1,6 +1,8 @@
 #include <commons/log.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <utils/monitores.h>
+#include <string.h>
 
 void log_iniciar_proceso(t_log*, uint32_t);
 void log_cambio_estado_proceso(t_log*, uint32_t, char*, char*);

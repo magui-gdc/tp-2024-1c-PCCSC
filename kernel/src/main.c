@@ -28,7 +28,7 @@ prcs_fin FINALIZACION;
 
 t_queue *cola_READY_VRR;
 
-sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running, orden_proceso_exit;
+sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running, orden_proceso_exit, cambio_estado_desalojo;
 int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
 
 int main(int argc, char *argv[])
@@ -54,6 +54,7 @@ int main(int argc, char *argv[])
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
     sem_init(&listo_proceso_en_running, 0, 0);
     sem_init(&orden_proceso_exit, 0, 0);
+    sem_init(&cambio_estado_desalojo, 0, 1);
 
     decir_hola("Kernel");
 
@@ -114,6 +115,7 @@ int main(int argc, char *argv[])
     sem_destroy(&contador_grado_multiprogramacion);
     sem_destroy(&orden_planificacion);
     sem_destroy(&listo_proceso_en_running);
+    sem_destroy(&cambio_estado_desalojo);
     sem_destroy(&orden_proceso_exit);
 
     log_destroy(logger);
@@ -325,7 +327,9 @@ void *planificar_corto_plazo(void *archivo_config){
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
             int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
             t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
-            proceso_desalojado->desalojo = DESALOJADO; // TODO: corresponde semáforo? porque dicho valor se modifica/lee desde finalizar_proceso tmb
+            sem_wait(&cambio_estado_desalojo);
+            proceso_desalojado->desalojo = DESALOJADO;
+            sem_post(&cambio_estado_desalojo);
 
             // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
             sem_wait(&mutex_planificacion_pausada);
@@ -370,7 +374,7 @@ void *planificar_corto_plazo(void *archivo_config){
                 break;
 
             case FIN_QUANTUM:
-                log_info(logger, "se termino el quantum.");
+                log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
                 t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_desalojo);
                 proceso_desalojado->estado = READY;
@@ -382,7 +386,9 @@ void *planificar_corto_plazo(void *archivo_config){
                 break;
             // (...)
             }
+            sem_wait(&cambio_estado_desalojo);
             proceso_desalojado->desalojo = SIN_DESALOJAR; // lo vuelvo a su estado inicial por si vuelve a READY y pasa a bloqueado y luego a READY nuevamente
+            sem_post(&cambio_estado_desalojo);
             /*
             A. PUEDE PASAR QUE NECESITES BLOQUEAR EL PROCESO (recurso o I/O no disponible)=> ver si se tiene que delegar en otro hilo que haga el mediano plazo
             B. PUEDE PASAR QUE FINALICE EL PROCESO => mandarlo a cola EXIT
@@ -600,7 +606,6 @@ void* control_quantum(void* tipo_algoritmo){
     //primer_elemento->estado = READY; esto se maneja desde corto plazo luego de que se desaloja el proceso
     t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
     enviar_interrupcion_a_cpu(interrupt);
-    // TODO: si salis del for, es porque pasaron 3 tiempos de KERNEL! y todavia el proceso esta running => necesita ser desalojado por QUANTUM
     // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
     
     // EVALUAR SI SE DEBE MANDAR EN CASO DE QUE, POR EJEMPLO, NO HAYA NADA EN LA COLA READY (RR) O EN LA COLA READY VRR (VRR): en ese caso, si mando INT, implicaría OVERHEAD para desp. volver a correr el mismo proceso que fue desalojado!!
@@ -662,7 +667,8 @@ void *planificar_new_to_ready(void *archivo_config)
                 primer_elemento->estado = READY;
                 mqueue_push(monitor_READY, primer_elemento);
                 log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
-                // TODO: ingreso a READYs
+                log_ingreso_ready(logger);// esto seria el ingreso a ready que decis???
+                // TODO: ingreso a READYs, 
                 log_info(logger, "estas en largo plazoo");
                 sem_post(&orden_planificacion);
             }
