@@ -1,9 +1,9 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
-#include <utils/monitores.h>
 #include "main.h"
 #include "logs.h"
+#include "monitores.h"
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
@@ -16,6 +16,8 @@ comunicacion kernel - memoria - cpu (codigos de operacion, sockets, leer instruc
 instruccion ENUM con una funcion que delegue segun ENUM una funcion a ejecutar
 memoria para leer en proceso (ver commmons)
 */
+
+
 
 config_struct config;
 t_list *pcb_list;
@@ -216,13 +218,17 @@ void *consola_kernel(void *archivo_config)
                                 // cuando el proceso está en running hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
                                 if(proceso_buscado->desalojo == SIN_DESALOJAR){ 
                                     // cuando el proceso está todavía en CPU mando interrupción
-                                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO};
+                                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO, 0};
                                     enviar_interrupcion_a_cpu(interrupt);
-                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION; // por las dudas de que ya haya desalojado antes de recibir la INT para que se lo finalice igual
+                                    sem_wait(&cambio_estado_desalojo);
+                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION;
+                                    sem_post(&cambio_estado_desalojo); // por las dudas de que ya haya desalojado antes de recibir la INT para que se lo finalice igual
                                     log_info(logger, "mandaste interrupcion con FINALIZAR_PROCESO");
                                 } else if (proceso_buscado->desalojo == DESALOJADO) {
                                     // cuando el proceso fue desalojado de CPU pero todavía no se trató su motivo de desalojo
+                                    sem_wait(&cambio_estado_desalojo);
                                     proceso_buscado->desalojo = PEDIDO_FINALIZACION; 
+                                    sem_post(&cambio_estado_desalojo);
                                     log_info(logger, "PEDIDO_FINALIZACION");
                                     // la idea es que desde corto plazo sólo se procese su motivo de desalojo cuando no haya un pedido de finalizacion! y si hay un pedido de finalización, se mande el proceso a EXIT!
                                 }
@@ -338,10 +344,12 @@ void *planificar_corto_plazo(void *archivo_config){
                 sem_post(&mutex_planificacion_pausada);
                 sem_wait(&mutex_planificacion_pausada);
             }
-            // TODO: el sem_post(&mutex_planificacion_pausada) hacerlo desde cada mensaje de desalojo luego de mover de cola el proceso, en caso de corresponder!
-            
-            if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION)
+
+            if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION){
+                sem_wait(&cambio_estado_desalojo);
                 mensaje_desalojo = FINALIZAR_PROCESO; // esto sólo se da cuando se lo finaliza desde consola 
+                sem_post(&cambio_estado_desalojo);
+            }
 
             switch (mensaje_desalojo){
             case EXIT_PROCESO:
@@ -355,8 +363,6 @@ void *planificar_corto_plazo(void *archivo_config){
                 // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
                 sem_post(&orden_proceso_exit);
                 break;
-
-            
             case WAIT_RECURSO:
                 // 1. carga el buffer (1. paso en la mayoría de los mensajes de desalojo )
                 // 2. lee únicamente (debería ser guardado en primer lugar) el nombre del recurso que pide la CPU utilizar
@@ -604,7 +610,7 @@ void* control_quantum(void* tipo_algoritmo){
         }
     }
     //primer_elemento->estado = READY; esto se maneja desde corto plazo luego de que se desaloja el proceso
-    t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM};
+    t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM, 1};
     enviar_interrupcion_a_cpu(interrupt);
     // aca recien se manda INTERRUPCION A CPU!!!!! : cuando devuelva cpu a kernel, el planificador de mediano plazo (dentro de corot plazo) devuelve PRC a READY ante mensaje de desalojo FIN de QUANTUM
     
@@ -616,10 +622,12 @@ void enviar_interrupcion_a_cpu(t_pic interrupcion){
     t_sbuffer* buffer_interrupt = buffer_create(
         sizeof(uint32_t) // PID
         + sizeof(int) // COD_OP
+        + sizeof(uint8_t) // BIT DE PRIORIDAD
     );
 
     buffer_add_uint32(buffer_interrupt, interrupcion.pid);
     buffer_add_int(buffer_interrupt, interrupcion.motivo_interrupcion);
+    buffer_add_uint8(buffer_interrupt, interrupcion.bit_prioridad);
 
     cargar_paquete(conexion_cpu_interrupt, INTERRUPCION, buffer_interrupt); 
     log_info(logger, "envio interrupcion a cpu");
@@ -667,7 +675,7 @@ void *planificar_new_to_ready(void *archivo_config)
                 primer_elemento->estado = READY;
                 mqueue_push(monitor_READY, primer_elemento);
                 log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
-                log_ingreso_ready(logger);// esto seria el ingreso a ready que decis???
+                log_ingreso_ready(logger, monitor_READY);// esto seria el ingreso a ready que decis???
                 // TODO: ingreso a READYs, 
                 log_info(logger, "estas en largo plazoo");
                 sem_post(&orden_planificacion);

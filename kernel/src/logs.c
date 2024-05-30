@@ -30,11 +30,12 @@ void log_desalojo_fin_de_quantum(t_log* logger, uint32_t pid){
 void log_ingreso_ready(t_log* logger, t_mqueue* cola_ready){
     char* mensaje = (char*)malloc(128);
     char* listado_pid = (char*)malloc(128);
-    int max = queue_size(cola_ready);
+    int max = queue_size(cola_ready); 
     char* pid_str = (char*)malloc(20);
-    for(int i = 0; i<max; i++)
-    {   
-        sprintf(pid_str, ((list_get(cola_ready->cola->elements, i))->pid)) ;
+    for(int i = 0; i<max; i++){   
+        sem_wait(&(cola_ready->mutex));
+        sprintf(pid_str, ((list_get(cola_ready->cola->elements, i))->pid));
+        sem_post(&(cola_ready->mutex));
         strcat(listado_pid, ", ");
         strcat(listado_pid, pid_str);
     }

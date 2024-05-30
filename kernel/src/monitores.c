@@ -5,7 +5,6 @@ t_mqueue* monitor_READY;
 t_mqueue* monitor_BLOCKED;
 t_mqueue* monitor_RUNNING;
 t_mqueue* monitor_EXIT;
-t_mqueue* monitor_INTERRUPCIONES;
 
 t_mqueue* mqueue_create(void) {
     t_mqueue* monitor = malloc(sizeof(t_mqueue));
@@ -56,7 +55,6 @@ void crear_monitores(void){
     monitor_RUNNING = mqueue_create(); //TODO: NO DEBERÍA SER UNA COLA => se supone que se ejecuta de a un proceso y que el acceso a RUNNING está controlado desde el planificador de corto plazo (ya sincronizado por semáforos) 
     monitor_BLOCKED = mqueue_create();
     monitor_EXIT = mqueue_create();
-    monitor_INTERRUPCIONES = mqueue_create();
 }
 
 void destruir_monitores(void){
@@ -65,6 +63,5 @@ void destruir_monitores(void){
     mqueue_destroy(monitor_RUNNING);
     mqueue_destroy(monitor_BLOCKED);
     mqueue_destroy(monitor_EXIT);
-    mqueue_destroy(monitor_INTERRUPCIONES);
 }
 

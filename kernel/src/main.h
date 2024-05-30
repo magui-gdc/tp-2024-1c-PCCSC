@@ -52,6 +52,7 @@ typedef struct{ //LO DEFINO ASI PORQUE NO SABEMOS COMO SON LOS RECURSOS AUN
 typedef struct {
     uint32_t pid;
     op_code motivo_interrupcion;
+    uint8_t bit_prioridad;
 } t_pic;
 
 typedef struct {
