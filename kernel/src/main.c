@@ -3,7 +3,6 @@
 #include <utils/hello.h>
 #include "main.h"
 #include "logs.h"
-#include "monitores.h"
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
