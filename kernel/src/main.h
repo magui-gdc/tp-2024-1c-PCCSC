@@ -1,18 +1,9 @@
+
 #include <utils/utilsCliente.h>
 #include <utils/utilsServer.h>
 #include <commons/config.h>
 #include <commons/string.h>
 #include <utils/buffer.h>
-
-// ---------- CONSTANTES ---------- //
-const char *estado_proceso_strings[] = {
-    "NEW", 
-    "READY", 
-    "RUNNING", 
-    "BLOCKED", 
-    "EXIT"
-};
-
 
 // --------- DECLARACION ESTRUCTURAS KERNEL --------- //
 typedef void (*fc_puntero)(); // PUNTERO A FUNCION
@@ -74,6 +65,8 @@ typedef struct {
     uint32_t PID;
 } prcs_fin;
 
+extern t_list* pcb_list;
+
 // --------- FUNCIONES DE CONFIGURACION --------- //
 void cargar_config_struct_KERNEL(t_config*);
 void inicializar_registros(t_pcb*);
@@ -91,7 +84,7 @@ void interpretar_comando_kernel(char*, void*);
 void scripts_kernel(char*, void*);
 void enviar_proceso_a_cpu();
 void recupera_contexto_proceso(t_sbuffer* buffer);
-void* buscar_pcb_por_pid(uint32_t);
+t_pcb* buscar_pcb_por_pid(uint32_t);
 t_pcb* extraer_proceso(uint32_t pid, e_estado_proceso estado);
 void liberar_proceso_en_memoria(uint32_t pid_proceso);
 void enviar_interrupcion_a_cpu(t_pic interrupcion);

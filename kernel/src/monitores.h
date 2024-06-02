@@ -24,6 +24,7 @@ void* mqueue_pop(t_mqueue* monitor); // escritura
 void mqueue_push(t_mqueue* monitor, void* elemento); // escritura
 void* mqueue_peek(t_mqueue* monitor); // lectura
 bool mqueue_is_empty(t_mqueue* monitor); // lectura
+int mqueue_size(t_mqueue* monitor); // lectura
 
 void crear_monitores(void);
 void destruir_monitores(void);

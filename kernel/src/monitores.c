@@ -49,6 +49,13 @@ bool mqueue_is_empty(t_mqueue* monitor){
     return respuesta;
 }
 
+int mqueue_size(t_mqueue* monitor){
+    sem_wait(&monitor->mutex);
+    int valor_size = queue_size(monitor->cola);
+    sem_post(&monitor->mutex);
+    return valor_size;
+}
+
 void crear_monitores(void){
     monitor_NEW = mqueue_create();
     monitor_READY = mqueue_create();
