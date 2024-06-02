@@ -1,8 +1,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
-#include "main.h"
-#include "logs.h"
+#include "logs.h" // logs incluye el main.h de kernel
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
@@ -16,7 +15,14 @@ instruccion ENUM con una funcion que delegue segun ENUM una funcion a ejecutar
 memoria para leer en proceso (ver commmons)
 */
 
-
+// ---------- CONSTANTES ---------- //
+const char *estado_proceso_strings[] = {
+    "NEW", 
+    "READY", 
+    "RUNNING", 
+    "BLOCKED", 
+    "EXIT"
+};
 
 config_struct config;
 t_list *pcb_list;
@@ -30,6 +36,7 @@ prcs_fin FINALIZACION;
 t_queue *cola_READY_VRR;
 
 sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running, orden_proceso_exit, cambio_estado_desalojo;
+sem_t mutex_cambio_estado; // TODO: agregarlo donde corresponda (es un semáforo que controla que no se pase un proceso de una cola a otra mientras se está realizando una operación de FINALIZAR_PROCESO)
 int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
 
 int main(int argc, char *argv[])
@@ -56,6 +63,7 @@ int main(int argc, char *argv[])
     sem_init(&listo_proceso_en_running, 0, 0);
     sem_init(&orden_proceso_exit, 0, 0);
     sem_init(&cambio_estado_desalojo, 0, 1);
+    sem_init(&mutex_cambio_estado,0,1);
 
     decir_hola("Kernel");
 
@@ -118,6 +126,7 @@ int main(int argc, char *argv[])
     sem_destroy(&listo_proceso_en_running);
     sem_destroy(&cambio_estado_desalojo);
     sem_destroy(&orden_proceso_exit);
+    sem_destroy(&mutex_cambio_estado);
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -191,8 +200,9 @@ void *consola_kernel(void *archivo_config)
                 }
             }
             else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
-                char *pid_char = tokens[1];
-                if (strlen(pid_char) != 0 && pid_char != NULL && atoi(pid_char) > 0){
+                char *pid_char = tokens[1], *endptr;
+                uint32_t valor_uint_pid = strtoul(pid_char, &endptr, 10);
+                if (strlen(pid_char) != 0 && pid_char != NULL && valor_uint_pid > 0 && *endptr == '\0'){
                     printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                     
                     // 1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
@@ -202,12 +212,10 @@ void *consola_kernel(void *archivo_config)
                     sem_post(&mutex_planificacion_pausada);
 
                     // 2. pregunto por su estado
-                    t_pcb* proceso_buscado = (t_pcb*)buscar_pcb_por_pid((uint32_t)atoi(pid_char));
+                    t_pcb* proceso_buscado = buscar_pcb_por_pid(valor_uint_pid);
 
-                    if (!proceso_buscado){
-                        char *mensaje = (char *)malloc(128);
-                        sprintf(mensaje, "obtengo proceso %u, en estado: %s", proceso_buscado->pid, (char *)estado_proceso_strings[proceso_buscado->estado] );
-                        log_info(logger, "%s", mensaje);
+                    if (proceso_buscado){
+                        printf("obtengo proceso %u, en estado: %s\n", proceso_buscado->pid, (char *)estado_proceso_strings[proceso_buscado->estado] );
 
                         // 3. trabajo la solicitud de finalización según su estado
                         if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
@@ -239,9 +247,8 @@ void *consola_kernel(void *archivo_config)
                                 sem_post(&orden_proceso_exit);
                             }
                         }
-                        free(mensaje);
                     } else
-                        printf("pid no existente");
+                        printf("pid no existente\n");
 
                     // 4. inicio la planificacion
                     sem_wait(&mutex_planificacion_pausada);
@@ -305,12 +312,16 @@ void *consola_kernel(void *archivo_config)
     return NULL;
 }
 
-void *buscar_pcb_por_pid(uint32_t pid_buscado){
+t_pcb* buscar_pcb_por_pid(uint32_t pid_buscado){
     bool comparar_pid(void *elemento){
         t_pcb *pcb = (t_pcb *)elemento;
+        //printf("tenemos el pid buscado %u y el pid actual %u\n", pid_buscado, pcb->pid);
         return pcb->pid == pid_buscado;
     }
-    return list_find(pcb_list, comparar_pid); // si no funciona pasarlo como puntero a funcion
+    t_pcb* encontrado = (t_pcb*)list_find(pcb_list, comparar_pid);
+    //if(encontrado) 
+        //printf("encontramos el proceso %u\n", encontrado->pid);
+    return encontrado; // si no funciona pasarlo como puntero a funcion
 }
 
 // definicion función hilo corto plazo
@@ -319,7 +330,7 @@ void *planificar_corto_plazo(void *archivo_config){
         sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
-            //sem_post(&mutex_planificacion_pausada); // lo libero luego de cambiar de cola dentro de cada algoritmo de planificacion: así evito que entre un FINALIZAR_PROCESO antes de que se realice el pase
+            sem_post(&mutex_planificacion_pausada);
 
             // 1. selecciona próximo proceso a ejecutar
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
@@ -343,6 +354,7 @@ void *planificar_corto_plazo(void *archivo_config){
                 sem_post(&mutex_planificacion_pausada);
                 sem_wait(&mutex_planificacion_pausada);
             }
+            sem_post(&mutex_planificacion_pausada);
 
             if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION){
                 sem_wait(&cambio_estado_desalojo);
@@ -357,7 +369,6 @@ void *planificar_corto_plazo(void *archivo_config){
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
-                sem_post(&mutex_planificacion_pausada); // LIBERO RECIÉN ACÁ, y luego de procesado el desalojo se puede DETENER/INICIAR planificacion O FINALIZAR_PROCESO
                 // TODO: log de finalización de proceso!!!! (según MENSAJE_DESALOJO)
                 // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
                 sem_post(&orden_proceso_exit);
@@ -370,7 +381,6 @@ void *planificar_corto_plazo(void *archivo_config){
                     A) si no está disponible => bloquea (RUNNING->BLOCKED_RECURSO), informa a CPU y ahora si ejecuta la función recuperar contexto del buffer que ya se encarga de actualizar en PCB
                     B) si está disponible => le resta una instancia al recurso y devuelve proceso a CPU (no hace falta seguir leyendo del buffer)
                     C) si no existe el nombre del recurso => recupera contexto del buffer actualizando PCB, (RUNNING->EXIT) ... mismo pasos que proceso EXIT
-                    TODO: para cada caso sem_post(&mutex_planificacion_pausada) apenas movimos de cola o al ppio si no corresponde mover de cola
                     */
                 // 4. libera buffer y otros recursos de memoria dinámica!!!!
                 break;
@@ -384,10 +394,8 @@ void *planificar_corto_plazo(void *archivo_config){
                 recupera_contexto_proceso(buffer_desalojo);
                 proceso_desalojado->estado = READY;
                 mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
-                sem_post(&mutex_planificacion_pausada);
                 log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
                 // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
-                // mqueue_pop(monitor_INTERRUPCIONES);// Elimina la interrupcion que ya se ejecutó. NO SE COMPARTEN ESTRUCTURAS ENTRE MÓDULOS A MENOS QUE SE PASEN POR SOCKET, esto se debe hacer desde el lado de CPU!
                 break;
             // (...)
             }
@@ -480,6 +488,9 @@ void iniciar_proceso(char *path){
 
     log_iniciar_proceso(logger, proceso->pid);
 
+    if(list_is_empty(pcb_list))
+        log_info(logger, "la lista esta vacia");
+
     list_add(pcb_list, proceso);
     pid++;
 }
@@ -540,6 +551,13 @@ fc_puntero obtener_algoritmo_planificacion(){
     return NULL;
 }
 
+void sleep_half_second() {
+    struct timespec tiempo;
+    tiempo.tv_sec = 0;
+    tiempo.tv_nsec = 200000000; // 500 millones de nanosegundos = 0.5 segundos
+    nanosleep(&tiempo, NULL);
+}
+
 // cada algoritmo carga en (la cola?) running el prox. proceso a ejecutar, sacándolo de ready
 void algortimo_fifo() {
     log_info(logger, "estas en fifo");
@@ -547,7 +565,6 @@ void algortimo_fifo() {
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
     primer_elemento->estado = RUNNING; 
     mqueue_push(monitor_RUNNING, primer_elemento);
-    sem_post(&mutex_planificacion_pausada);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
@@ -569,7 +586,6 @@ void algoritmo_vrr(){
     char* algoritmo = "VRR";
     pthread_create(&hilo_RR, NULL, control_quantum, algoritmo);
     pthread_detach(hilo_RR);
-
 }
 
 void* control_quantum(void* tipo_algoritmo){
@@ -589,14 +605,14 @@ void* control_quantum(void* tipo_algoritmo){
 
 
     mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
-    sem_post(&mutex_planificacion_pausada);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
     // 1. verificas que el proceso siga en RUNNNIG dentro del QUANTUM establecido => de lo contrario, matas el hilo
     // 2. si se acabo el quantum, manda INTERRUPCION A CPU        
     for(int i = quantum_por_ciclo; i<=0; i--){ 
-        sleep(1);
+        //sleep(1);
+        sleep_half_second();
         // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
         if(primer_elemento->estado != RUNNING){ // si ya no esta en running (se desalojó el proceso por otro motivo que NO es FIN DE QUANTUM)
             if(strcmp(tipo_algoritmo, "VRR") == 0){
@@ -608,6 +624,7 @@ void* control_quantum(void* tipo_algoritmo){
             pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
         }
     }
+    log_debug(logger, "saliste del ciclo quantum");
     //primer_elemento->estado = READY; esto se maneja desde corto plazo luego de que se desaloja el proceso
     t_pic interrupt = {primer_elemento->pid, FIN_QUANTUM, 1};
     enviar_interrupcion_a_cpu(interrupt);
@@ -701,11 +718,11 @@ void *planificar_all_to_exit(void *args){
         sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
+            sem_post(&mutex_planificacion_pausada);
             t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
             switch (proceso_exit->estado){
                 case NEW:
                     proceso_exit->estado = EXIT;
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     liberar_proceso_en_memoria(proceso_exit->pid);
                     log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
                     break;
@@ -713,16 +730,14 @@ void *planificar_all_to_exit(void *args){
                 case RUNNING:
                 case BLOCKED:
                     // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
-                    proceso_exit->estado = EXIT;
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     op_code estado_actual = proceso_exit->estado;
                     liberar_proceso_en_memoria(proceso_exit->pid);
                     // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
                     log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
+                    proceso_exit->estado = EXIT;
                     sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
                     break;
                 default:
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     break;
             }
             mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
