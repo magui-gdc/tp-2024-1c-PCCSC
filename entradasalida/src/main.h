@@ -34,6 +34,16 @@ typedef struct
 } t_io;
 
 
+typedef struct { 
+    int BLOQUE_INICIAL;
+    int TAMANIO_ARCHIVO;
+} archivo_metadata;
+
+int BLOCK_SIZE;     // estos no se si dejarlos pq ya estan en el struct del config
+int BLOCK_COUNT;    // estos no se si dejarlos pq ya estan en el struct del config
+int TAMANIO_ARCHIVO_BLOQUES; // = BLOCK_SIZE * BLOCK_COUNT
+
+
 extern config_struct config;
 
 void cargar_config_struct_IO_gen(t_config*);
@@ -46,3 +56,15 @@ void paquete(int);
 void inicializar_io(char*, t_config*);
 
 void selector_carga_config(t_config*);
+
+////// DIALFS
+
+// FUNCIONES PRINCIPALES
+void crear_archivo(const char* nombre_archivo, t_bitarray* bitarray);   //t_bitarray ES DE LAS COMMONS!
+void eliminar_archivo(const char* nombre_archivo, t_bitarray* bitarray);
+void truncar_archivo(const char* nombre_archivo, int nuevo_tamano, t_bitarray* bitarray);
+void leer_archivo(const char* nombre_archivo, int offset, int size, char* buffer, t_bitarray* bitarray);
+void escribir_archivo(const char* nombre_archivo, int offset, int size, const char* buffer, t_bitarray* bitarray);
+void compactar_fs(t_bitarray* bitarray);
+bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
+bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);

@@ -147,20 +147,21 @@ void paquete(int conexion) {
 
 void selector_carga_config (t_config* archivo_config){
 
-    if(strcmp(config_get_string_value(archivo_config, "TIPO_INTERFAZ"),"GENERICA")){
-        cargar_config_struct_IO_gen(archivo_config);     
-    }
-
-    if(strcmp(config_get_string_value(archivo_config, "TIPO_INTERFAZ"),"STDIN")){
-       cargar_config_struct_IO_in(archivo_config); 
-    }
-
-    if(strcmp(config_get_string_value(archivo_config, "TIPO_INTERFAZ"),"STDOUT")){
+    char* tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
+    
+    if (strcmp(tipo_interfaz, "GENERICA") == 0) {
+        cargar_config_struct_IO_gen(archivo_config);
+    } else if (strcmp(tipo_interfaz, "STDIN") == 0) {
+        cargar_config_struct_IO_in(archivo_config);
+    } else if (strcmp(tipo_interfaz, "STDOUT") == 0) {
         cargar_config_struct_IO_out(archivo_config);
-    }
-
-    if(strcmp(sconfig_get_string_value(archivo_config, "TIPO_INTERFAZ"),"DIALFS")){
-        cargar_config_struct_IO_fs(archivo_config); 
+    } else if (strcmp(tipo_interfaz, "DIALFS") == 0) {
+        cargar_config_struct_IO_fs(archivo_config);
+    } else {
+        printf("interfaz no reconocida XD: %s\n", tipo_interfaz); // como se pone el log de q esta mal!!!?????
     }
 
 }
+
+////////////////////////// DIAL FS ////////////////////////////////////
+
