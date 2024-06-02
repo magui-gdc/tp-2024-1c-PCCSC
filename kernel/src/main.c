@@ -157,8 +157,7 @@ void cargar_config_struct_KERNEL(t_config *archivo_config)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // -------------------- INICIO FCS. DE HILOS KERNEL --------------------
 // definicion funcion hilo consola
-void *consola_kernel(void *archivo_config)
-{
+void *consola_kernel(void *archivo_config){
     char *leido;
 
     while (1)
@@ -171,35 +170,40 @@ void *consola_kernel(void *archivo_config)
             free(leido);
             break;
         }
-        char **tokens = string_split(leido, " ");
-        char *comando = tokens[0];
-        if (comando != NULL)
-        {
-            if (strcmp(comando, "EJECUTAR_SCRIPT") == 0 && string_array_size(tokens) >= 2)
-            {
-                char *path = tokens[1];
-                if (strlen(path) != 0 && path != NULL)
-                {
-                    consola_interactiva(path);
-                    printf("path ingresado (ejecutar_script): %s\n", path);
-                }
-            } // INICIAR_PROCESO /carpetaProcesos/proceso1
-            else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
-                char *path = tokens[1];
-                t_paquete* paquete_proceso = crear_paquete();
-                if (strlen(path) != 0 && path != NULL){   
-                    agregar_a_paquete(paquete_proceso, path, sizeof(path));
-                    paquete_proceso->codigo_operacion = INICIAR_PROCESO;
-                    enviar_paquete(paquete_proceso, conexion_memoria);
-                    // solicitar creacion a memoria de proceso
-                    // si se crea proceso, iniciar largo plazo
+        interpretar_comando_kernel(leido, archivo_config);
+    }
+    return NULL;    
+}
 
-                    iniciar_proceso(path);
-                    // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
-                    printf("path ingresado (iniciar_proceso): %s\n", path);
-                }
+void interpretar_comando_kernel(char* leido, void *archivo_config)
+{
+    char **tokens = string_split(leido, " ");
+    char *comando = tokens[0];
+    if (comando != NULL)
+    {
+        if (strcmp(comando, "EJECUTAR_SCRIPT") == 0 && string_array_size(tokens) >= 2)
+        {
+            char *path = tokens[1];
+            if (strlen(path) != 0 && path != NULL){
+                scripts_kernel(path, archivo_config);
+                printf("path ingresado (ejecutar_script): %s\n", path);
             }
-            else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
+        } // INICIAR_PROCESO /carpetaProcesos/proceso1
+        else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
+            char *path = tokens[1];
+            t_paquete* paquete_proceso = crear_paquete();
+            if (strlen(path) != 0 && path != NULL){   
+                agregar_a_paquete(paquete_proceso, path, sizeof(path));
+                paquete_proceso->codigo_operacion = INICIAR_PROCESO;
+                enviar_paquete(paquete_proceso, conexion_memoria);
+                // solicitar creacion a memoria de proceso
+                // si se crea proceso, iniciar largo plazo
+
+                iniciar_proceso(path);
+                // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
+                printf("path ingresado (iniciar_proceso): %s\n", path);
+            }
+        }else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *pid_char = tokens[1], *endptr;
                 uint32_t valor_uint_pid = strtoul(pid_char, &endptr, 10);
                 if (strlen(pid_char) != 0 && pid_char != NULL && valor_uint_pid > 0 && *endptr == '\0'){
@@ -217,35 +221,35 @@ void *consola_kernel(void *archivo_config)
                     if (proceso_buscado){
                         printf("obtengo proceso %u, en estado: %s\n", proceso_buscado->pid, (char *)estado_proceso_strings[proceso_buscado->estado] );
 
-                        // 3. trabajo la solicitud de finalización según su estado
-                        if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
-                            
-                            // RUNNING -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
-                            if(proceso_buscado->estado == RUNNING){ 
-                                // cuando el proceso está en running hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
-                                if(proceso_buscado->desalojo == SIN_DESALOJAR){ 
-                                    // cuando el proceso está todavía en CPU mando interrupción
-                                    t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO, 0};
-                                    enviar_interrupcion_a_cpu(interrupt);
-                                    sem_wait(&cambio_estado_desalojo);
-                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION;
-                                    sem_post(&cambio_estado_desalojo); // por las dudas de que ya haya desalojado antes de recibir la INT para que se lo finalice igual
-                                    log_info(logger, "mandaste interrupcion con FINALIZAR_PROCESO");
-                                } else if (proceso_buscado->desalojo == DESALOJADO) {
-                                    // cuando el proceso fue desalojado de CPU pero todavía no se trató su motivo de desalojo
-                                    sem_wait(&cambio_estado_desalojo);
-                                    proceso_buscado->desalojo = PEDIDO_FINALIZACION; 
-                                    sem_post(&cambio_estado_desalojo);
-                                    log_info(logger, "PEDIDO_FINALIZACION");
-                                    // la idea es que desde corto plazo sólo se procese su motivo de desalojo cuando no haya un pedido de finalizacion! y si hay un pedido de finalización, se mande el proceso a EXIT!
-                                }
-                                // en el caso de RUNNING, el proceso de desalojo (recibir el código de operación) se maneja desde CORTO PLAZO!
-                            } else { 
-                                // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
-                                t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado->pid, proceso_buscado->estado); // lo saco de su cola actual
-                                mqueue_push(monitor_EXIT, proceso_encontrado); // lo agrego a EXIT
-                                sem_post(&orden_proceso_exit);
+                    // 3. trabajo la solicitud de finalización según su estado
+                    if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
+                        
+                        // RUNNING -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
+                        if(proceso_buscado->estado == RUNNING){ 
+                            // cuando el proceso está en running hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
+                            if(proceso_buscado->desalojo == SIN_DESALOJAR){ 
+                                // cuando el proceso está todavía en CPU mando interrupción
+                                t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO, 0};
+                                enviar_interrupcion_a_cpu(interrupt);
+                                sem_wait(&cambio_estado_desalojo);
+                                proceso_buscado->desalojo = PEDIDO_FINALIZACION;
+                                sem_post(&cambio_estado_desalojo); // por las dudas de que ya haya desalojado antes de recibir la INT para que se lo finalice igual
+                                log_info(logger, "mandaste interrupcion con FINALIZAR_PROCESO");
+                            } else if (proceso_buscado->desalojo == DESALOJADO) {
+                                // cuando el proceso fue desalojado de CPU pero todavía no se trató su motivo de desalojo
+                                sem_wait(&cambio_estado_desalojo);
+                                proceso_buscado->desalojo = PEDIDO_FINALIZACION; 
+                                sem_post(&cambio_estado_desalojo);
+                                log_info(logger, "PEDIDO_FINALIZACION");
+                                // la idea es que desde corto plazo sólo se procese su motivo de desalojo cuando no haya un pedido de finalizacion! y si hay un pedido de finalización, se mande el proceso a EXIT!
                             }
+                                // en el caso de RUNNING, el proceso de desalojo (recibir el código de operación) se maneja desde CORTO PLAZO!
+                        } else { 
+                            // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
+                            t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado->pid, proceso_buscado->estado); // lo saco de su cola actual
+                            mqueue_push(monitor_EXIT, proceso_encontrado); // lo agrego a EXIT
+                            sem_post(&orden_proceso_exit);
+                        }
                         }
                     } else
                         printf("pid no existente\n");
@@ -254,62 +258,58 @@ void *consola_kernel(void *archivo_config)
                     sem_wait(&mutex_planificacion_pausada);
                     PLANIFICACION_PAUSADA = planificacion_registrada; // la vuelvo a setear a su valor anterior
                     sem_post(&mutex_planificacion_pausada);
-                
-                }
-            }
-            else if (strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2)
-            {
-                char *valor = tokens[1];
-                if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0)
-                {
-                    if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION"))
-                    {
-                        log_info(logger, "multigramacion mayor");
-                        int diferencia = atoi(valor) - config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION");
-                        for (int i = 0; i < diferencia; i++)
-                            sem_post(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
-                    }
-                    else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"))
-                    {
-                        log_info(logger, "multigramacion menor");
-                        int diferencia = config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION") - atoi(valor);
-                        for (int i = 0; i < diferencia; i++)
-                            sem_wait(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
-                    }
-                    config_set_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION", valor);
-                    config_save((t_config *)archivo_config);
-                    printf("grado multiprogramacion cambiado a %s\n", valor);
-                }
-            }
-            else if (strcmp(comando, "DETENER_PLANIFICACION") == 0)
-            {
-                // si la planificacion ya estaba detenida, no pierdo tiempo de procesamiento de procesos escribiendola de vuelta
-                sem_wait(&mutex_planificacion_pausada);
-                PLANIFICACION_PAUSADA = 1; // escritura
-                sem_post(&mutex_planificacion_pausada);
-                printf("detener planificacion\n");
-            }
-            else if (strcmp(comando, "INICIAR_PLANIFICACION") == 0)
-            {
-                // si la planificacion ya estaba corriendo, perdería tiempo de procesamiento si la excluyo para sobreescribirla con el mismo valor
-                if(PLANIFICACION_PAUSADA != 0) { // como es lectura y sólo puede ocurrir otra lectura simultaneamente, no necesita semaforo (creo ja!)
-                    sem_wait(&mutex_planificacion_pausada);
-                    PLANIFICACION_PAUSADA = 0; // escritura
-                    sem_post(&mutex_planificacion_pausada);
-                }
-                printf("iniciar planificacion\n");
-            }
-            else if (strcmp(comando, "PROCESO_ESTADO") == 0)
-            {
-                // estados_procesos()
-                printf("estados de los procesos\n");
+            
             }
         }
-        string_array_destroy(tokens);
-        free(leido);
+        else if (strcmp(comando, "MULTIPROGRAMACION") == 0 && string_array_size(tokens) >= 2)
+        {
+            char *valor = tokens[1];
+            if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0)
+            {
+                if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION"))
+                {
+                    log_info(logger, "multigramacion mayor");
+                    int diferencia = atoi(valor) - config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION");
+                    for (int i = 0; i < diferencia; i++)
+                        sem_post(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
+                }
+                else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"))
+                {
+                    log_info(logger, "multigramacion menor");
+                    int diferencia = config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION") - atoi(valor);
+                    for (int i = 0; i < diferencia; i++)
+                        sem_wait(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
+                }
+                config_set_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION", valor);
+                config_save((t_config *)archivo_config);
+                printf("grado multiprogramacion cambiado a %s\n", valor);
+            }
+        }
+        else if (strcmp(comando, "DETENER_PLANIFICACION") == 0)
+        {
+            // si la planificacion ya estaba detenida, no pierdo tiempo de procesamiento de procesos escribiendola de vuelta
+            sem_wait(&mutex_planificacion_pausada);
+            PLANIFICACION_PAUSADA = 1; // escritura
+            sem_post(&mutex_planificacion_pausada);
+            printf("detener planificacion\n");
+        }
+        else if (strcmp(comando, "INICIAR_PLANIFICACION") == 0)
+        {
+            // si la planificacion ya estaba corriendo, perdería tiempo de procesamiento si la excluyo para sobreescribirla con el mismo valor
+            if(PLANIFICACION_PAUSADA != 0) { // como es lectura y sólo puede ocurrir otra lectura simultaneamente, no necesita semaforo (creo ja!)
+                sem_wait(&mutex_planificacion_pausada);
+                PLANIFICACION_PAUSADA = 0; // escritura
+                sem_post(&mutex_planificacion_pausada);
+            }
+            printf("iniciar planificacion\n");
+        }
+        else if (strcmp(comando, "PROCESO_ESTADO") == 0)
+        {
+            // estados_procesos()
+            printf("estados de los procesos\n");
+        }
     }
-
-    return NULL;
+    string_array_destroy(tokens);
 }
 
 t_pcb* buscar_pcb_por_pid(uint32_t pid_buscado){
@@ -435,8 +435,8 @@ void *planificar_largo_plazo(void *archivo_config)
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // ------------- INICIO FCS. HILO CONSOLA KERNEL -------------
-void consola_interactiva(char* ruta_archivo){
-    /*char* instruccion = malloc(50);
+void scripts_kernel(char* ruta_archivo, void* archivo_config){
+    char* instruccion = malloc(50);
     char datoLeido;
     FILE* script = fopen(ruta_archivo, "rb+");
     if (script == NULL){
@@ -447,10 +447,10 @@ void consola_interactiva(char* ruta_archivo){
             fread(&datoLeido, sizeof(char), sizeof(datoLeido), script);
             if(datoLeido == "\n"){
                 printf("INSTRUCCION LEIDA %s", instruccion);
-                consola_kernel(instruccion);
+                interpretar_comando_kernel(instruccion, archivo_config);
             }
         }
-    }*/
+    }
 }
 
 void inicializar_registros(t_pcb* proceso) {
