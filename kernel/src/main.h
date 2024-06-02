@@ -87,7 +87,8 @@ void* planificar_all_to_exit(void*);
  
 // ---------  --------- //
 void iniciar_proceso(char*);
-void consola_interactiva(char*);
+void interpretar_comando_kernel(char*, void*);
+void scripts_kernel(char*, void*);
 void enviar_proceso_a_cpu();
 void recupera_contexto_proceso(t_sbuffer* buffer);
 void* buscar_pcb_por_pid(uint32_t);
