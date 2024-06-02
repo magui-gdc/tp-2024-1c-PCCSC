@@ -261,6 +261,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
+        } else if (strcmp(comando, "IO_GEN_SLEEP")){
+            /*char* nombre_interfaz = tokens[1];
+            int* tiempo_sleep = atoi(tokens[2]);
+            io_gen_sleep(nombre_interfaz, tiempo_sleep);*/
         }
         // TODO: SEGUIR
     }

@@ -17,7 +17,8 @@ typedef enum
 	FIN_QUANTUM, // kernel - cpuInterrupt
 	FINALIZAR_PROCESO,
 	NO_FINALIZADO,
-    DESALOJAR_PROCESO
+    DESALOJAR_PROCESO,
+	RECIBI_INTERFAZ // interfaz - kernel
 }op_code;
 
 

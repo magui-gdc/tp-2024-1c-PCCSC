@@ -320,7 +320,7 @@ void *planificar_corto_plazo(void *archivo_config){
         sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
-            //sem_post(&mutex_planificacion_pausada); // lo libero luego de cambiar de cola dentro de cada algoritmo de planificacion: así evito que entre un FINALIZAR_PROCESO antes de que se realice el pase
+            sem_post(&mutex_planificacion_pausada); 
 
             // 1. selecciona próximo proceso a ejecutar
             algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
@@ -344,6 +344,7 @@ void *planificar_corto_plazo(void *archivo_config){
                 sem_post(&mutex_planificacion_pausada);
                 sem_wait(&mutex_planificacion_pausada);
             }
+            sem_post(&mutex_planificacion_pausada);
 
             if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION){
                 sem_wait(&cambio_estado_desalojo);
@@ -358,7 +359,6 @@ void *planificar_corto_plazo(void *archivo_config){
                 t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
                 recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
-                sem_post(&mutex_planificacion_pausada); // LIBERO RECIÉN ACÁ, y luego de procesado el desalojo se puede DETENER/INICIAR planificacion O FINALIZAR_PROCESO
                 // TODO: log de finalización de proceso!!!! (según MENSAJE_DESALOJO)
                 // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
                 sem_post(&orden_proceso_exit);
@@ -371,7 +371,6 @@ void *planificar_corto_plazo(void *archivo_config){
                     A) si no está disponible => bloquea (RUNNING->BLOCKED_RECURSO), informa a CPU y ahora si ejecuta la función recuperar contexto del buffer que ya se encarga de actualizar en PCB
                     B) si está disponible => le resta una instancia al recurso y devuelve proceso a CPU (no hace falta seguir leyendo del buffer)
                     C) si no existe el nombre del recurso => recupera contexto del buffer actualizando PCB, (RUNNING->EXIT) ... mismo pasos que proceso EXIT
-                    TODO: para cada caso sem_post(&mutex_planificacion_pausada) apenas movimos de cola o al ppio si no corresponde mover de cola
                     */
                 // 4. libera buffer y otros recursos de memoria dinámica!!!!
                 break;
@@ -385,7 +384,6 @@ void *planificar_corto_plazo(void *archivo_config){
                 recupera_contexto_proceso(buffer_desalojo);
                 proceso_desalojado->estado = READY;
                 mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
-                sem_post(&mutex_planificacion_pausada);
                 log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
                 // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
                 // mqueue_pop(monitor_INTERRUPCIONES);// Elimina la interrupcion que ya se ejecutó. NO SE COMPARTEN ESTRUCTURAS ENTRE MÓDULOS A MENOS QUE SE PASEN POR SOCKET, esto se debe hacer desde el lado de CPU!
@@ -548,7 +546,6 @@ void algortimo_fifo() {
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
     primer_elemento->estado = RUNNING; 
     mqueue_push(monitor_RUNNING, primer_elemento);
-    sem_post(&mutex_planificacion_pausada);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", (char *)estado_proceso_strings[primer_elemento->estado]);
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
@@ -590,7 +587,6 @@ void* control_quantum(void* tipo_algoritmo){
 
 
     mqueue_push(monitor_RUNNING, primer_elemento); //TODO: se supone que se modifica de a uno y que no necesita SEMÁFOROS pero por el momento lo dejamos con el monitor (no debería ser una cola!!)
-    sem_post(&mutex_planificacion_pausada);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
     sem_post(&listo_proceso_en_running); // manda señal al planificador corto plazo para que envie proceso a CPU a traves del puerto dispatch
 
@@ -619,9 +615,10 @@ void* control_quantum(void* tipo_algoritmo){
 }
 
 void enviar_interrupcion_a_cpu(t_pic interrupcion){
+    // 1. asigno espacio en memoria dinámica => pasar por parámetro de buffer_create el tamaño total 
     t_sbuffer* buffer_interrupt = buffer_create(
         sizeof(uint32_t) // PID
-        + sizeof(int) // COD_OP
+        + sizeof(int) // COD_OP (enum)
         + sizeof(uint8_t) // BIT DE PRIORIDAD
     );
 
@@ -702,11 +699,11 @@ void *planificar_all_to_exit(void *args){
         sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
         sem_wait(&mutex_planificacion_pausada);
         if (!PLANIFICACION_PAUSADA){ // lectura
+            sem_post(&mutex_planificacion_pausada);
             t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
             switch (proceso_exit->estado){
                 case NEW:
                     proceso_exit->estado = EXIT;
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     liberar_proceso_en_memoria(proceso_exit->pid);
                     log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
                     break;
@@ -714,16 +711,14 @@ void *planificar_all_to_exit(void *args){
                 case RUNNING:
                 case BLOCKED:
                     // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
-                    proceso_exit->estado = EXIT;
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     op_code estado_actual = proceso_exit->estado;
                     liberar_proceso_en_memoria(proceso_exit->pid);
                     // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
                     log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
+                    proceso_exit->estado = EXIT;
                     sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
                     break;
                 default:
-                    sem_post(&mutex_planificacion_pausada); // para que NO se pise con FINALIZAR_PROCESO
                     break;
             }
             mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
@@ -758,11 +753,15 @@ void* atender_cliente(void* cliente){
 	int cliente_recibido = *(int*) cliente;
 	while(1){
 		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
-		switch (cod_op)
-		{
+		switch (cod_op){
 		case CONEXION:
 			recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
 			break;
+        case RECIBI_INTERFAZ:   
+            // cargar_buffer
+            // buffer_read...
+            // (...)
+            break; 
 		case PAQUETE:
 			t_list* lista = recibir_paquete(cliente_recibido);
 			log_info(logger, "Me llegaron los siguientes valores:\n");
@@ -770,6 +769,7 @@ void* atender_cliente(void* cliente){
 			break;
 		case -1:
 			log_error(logger, "Cliente desconectado.");
+            // (...)
 			close(cliente_recibido); // cierro el socket accept del cliente
 			free(cliente); // libero el malloc reservado para el cliente
 			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
