@@ -33,6 +33,7 @@ tiposDeDato obtenerTipo(char* registro){
     }
 }
 
+
 void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** dato_32bits){
     *dato_8bits = NULL;
     *dato_32bits = NULL;

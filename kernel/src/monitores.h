@@ -24,6 +24,7 @@ void* mqueue_pop(t_mqueue* monitor); // escritura
 void mqueue_push(t_mqueue* monitor, void* elemento); // escritura
 void* mqueue_peek(t_mqueue* monitor); // lectura
 bool mqueue_is_empty(t_mqueue* monitor); // lectura
+int mqueue_size(t_mqueue* monitor); // lectura
 
 void crear_monitores(void);
 void destruir_monitores(void);
@@ -32,5 +33,4 @@ void destruir_monitores(void);
 //void crear_colas(void); // OBSOLETO CON USO DE MONITORES
 //void destruir_colas();
 //t_queue *obtener_cola(uint32_t pid_buscado); //ANALIZAR CON PASE A MONITORES ¿?
-//void* buscar_pcb_por_pid(uint32_t);
 //t_queue* obtener_cola(uint32_t);
