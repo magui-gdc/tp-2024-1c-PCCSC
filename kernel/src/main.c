@@ -467,7 +467,7 @@ t_pcb* extraer_proceso(uint32_t pid_proceso, e_estado_proceso estado) {
     // Función de condición para buscar el proceso por PID
     bool buscar_por_pid(void* data) {
         return ((t_pcb*)data)->pid == pid_proceso;
-    }
+    };
 
     // busca y elimina procesode la cola
     t_pcb* proceso_encontrado = (t_pcb*)list_remove_by_condition(monitor->cola->elements, buscar_por_pid);
@@ -558,12 +558,18 @@ void* control_quantum(void* tipo_algoritmo){
         // TODO: EVALUAR SI ESTO DE ACA NO CORRESPONDERIA HACERLO CUANDO SE DEVUELVE EL PROCESO DE CPU con mensaje de desalojo distinto de quantum, asi no queda este hilo suelto dando lugar a errores de sincronizacion y la posibilidad de que mas de un hilo que ejecute control_quantum modifique las mismas variables simultaneamente
         if(primer_elemento->estado != RUNNING){ // si ya no esta en running (se desalojó el proceso por otro motivo que NO es FIN DE QUANTUM)
             if(strcmp(tipo_algoritmo, "VRR") == 0){
+                primer_elemento->quantum = quantum_por_ciclo;
+                mqueue_push(monitor_READY_VRR, primer_elemento);
                 /* A.VRR)
                 1. cargar el quantum restante (i) en el PCB del proceso
                 2. mandar el proceso a la cola READY_VRR
                 */
             }
             pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la funcion que lo llamo   
+        }
+        if(!mqueue_is_empty(monitor_READY_VRR) && !mqueue_is_empty(monitor_READY)){
+            log_debug(logger, "Se acabó el quantum, pero no hay otra proceso en READY... ");
+            quantum_por_ciclo = duracion_quantum / 1000;
         }
     }
     log_debug(logger, "saliste del ciclo quantum");
