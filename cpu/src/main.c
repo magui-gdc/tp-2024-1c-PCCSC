@@ -261,6 +261,28 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
+        } else if (strcmp(comando, "WAIT")){
+            char *recurso = tokens[1];
+            t_sbuffer *buffer_desalojo_wait = buffer_create(
+                (uint32_t)strlen(recurso) +
+                sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+            buffer_add_string(buffer_desalojo_wait, (uint32_t)strlen(recurso), recurso);
+            desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, WAIT_RECURSO);
+            int respuesta = recibir_operacion(conexion_kernel);
+                switch (respuesta){
+                case DESALOJAR:
+                    /* TODO: evaluar si hay que agregar algo más */
+                    seguir_ejecucion = 0;
+                    desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                    break;
+                case CONTINUAR:
+                    /* TODO: creo que en este caso no haría nada.... */
+                    break;
+                }
+        } else if (strcmp(comando, "SIGNAL")){
+            
         } else if (strcmp(comando, "IO_GEN_SLEEP")){
             /*char* nombre_interfaz = tokens[1];
             int* tiempo_sleep = atoi(tokens[2]);

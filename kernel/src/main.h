@@ -31,6 +31,7 @@ typedef struct{
     char* puerto_cpu_dispatch;
     char* puerto_cpu_interrupt;
     char* algoritmo_planificacion;
+    char** recursos;
     int quantum;
 } config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
@@ -53,7 +54,7 @@ typedef struct {
     t_registros_cpu registros;
     e_estado_proceso estado;
     char path[256];
-    int recursos[3]; // guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando
+    int* recursos; // array que guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando
     cod_desalojo desalojo; 
     /*SIN_DESALOJAR: está en CPU cuando el estado es RUNNING, 
     DESALOJADO: volvió de CPU y todavía no se trató su mensaje de desalojo, 
@@ -83,6 +84,7 @@ void iniciar_proceso(char*);
 void interpretar_comando_kernel(char*, void*);
 void scripts_kernel(char*, void*);
 void enviar_proceso_a_cpu();
+void recibir_proceso_desalojado(t_config* archivo_config);
 void recupera_contexto_proceso(t_sbuffer* buffer);
 t_pcb* buscar_pcb_por_pid(uint32_t);
 t_pcb* extraer_proceso(uint32_t pid, e_estado_proceso estado);

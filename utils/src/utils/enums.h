@@ -18,7 +18,9 @@ typedef enum
 	FINALIZAR_PROCESO,
 	NO_FINALIZADO,
     DESALOJAR_PROCESO,
-	RECIBI_INTERFAZ // interfaz - kernel
+	RECIBI_INTERFAZ, // interfaz - kernel
+	DESALOJAR, // KERNEL - CPU 
+	CONTINUAR // KERNEL - CPU
 }op_code;
 
 
