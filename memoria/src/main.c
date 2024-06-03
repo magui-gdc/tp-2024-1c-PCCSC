@@ -54,9 +54,11 @@ void *atender_cliente(void *cliente)
         {
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
             t_list *path_recibido = recibir_paquete(cliente_recibido);
+            crear_proceso(pid, path); // de donde saco el path y el pid xd????
             log_info(logger, "CREE EL PROCESO");
             break;
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
+            eliminar_proceso(pid); // falta q obtenga el pid xd
             break;
         case LEER_PROCESO:
             // guarda BUFFER del paquete enviado
@@ -130,4 +132,56 @@ void *atender_cliente(void *cliente)
             break;
         }
     }
+}
+
+////// funciones memoria
+
+void inicializar_memoria(){
+
+    memoria.num_frames = config.tam_memoria / config.tam_pagina;    //calculo del espacio de los frames
+    memoria.espacio_usuario = malloc(config.tam_memoria);           
+    memoria.tabla_paginas = malloc(memoria.num_frames * sizeof(int));
+
+    for (int i = 0; i < memoria.num_frames; i++) { //esto es para recorrer la tabla e inicializarla toda en -1 
+        memoria.tabla_paginas[i] = -1;
+    } 
+
+}
+
+void crear_proceso(int pid, char* path){
+    
+    FILE *archivo = fopen(path_instrucciones, "r");
+    if (!archivo) {
+        log_error(logger, "el archivo del path '%s' no se abre :( ", path_instrucciones);
+        return;
+    }
+
+    /*
+    
+            IMPLEMENTATION COMING SOON
+    
+    
+    */
+
+    fclose(archivo);
+    log_info(logger, "proceso %d cargado en memoria yay!!", pid);
+}
+
+int encontrar_hueco() { //busco el hueco libre mas proximo!! 
+    
+    for (int i = 0; i < memoria.num_frames; i++) {
+        if (memoria.tabla_paginas[i] == -1) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void eliminar_proceso(int pid) { //vuelvo a poner la tabla en -1!!! yay
+    for (int i = 0; i < memoria.num_frames; i++) {
+        if (memoria.tabla_paginas[i] == pid) {
+            memoria.tabla_paginas[i] = -1;
+        }
+    }
+    log_info(logger, "proceso %d eliminado", pid);
 }
