@@ -17,6 +17,7 @@ typedef struct
     char* retraso_compactacion;
 } config_struct;
 
+/*
 typedef enum {
     IO_GEN_SLEEP,
     IO_STDIN_READ,
@@ -25,6 +26,15 @@ typedef enum {
     IO_FS_DELETE,
     IO_FS_TRUNCATE
 } instrucciones;
+*/
+
+typedef enum {
+    GEN,
+    IN,
+    OUT,
+    FS,
+    MISSING
+} IO_class;
 
 //nos llega el char de la interfaz (mouse, teclado, impresora), y el config que SUPONEMOS que viene del kernel segun la interfaz
 typedef struct

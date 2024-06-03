@@ -18,7 +18,13 @@ typedef enum
 	FINALIZAR_PROCESO,
 	NO_FINALIZADO,
     DESALOJAR_PROCESO,
-	RECIBI_INTERFAZ // interfaz - kernel
+	RECIBI_INTERFAZ, // interfaz - kernel
+	IO_GEN_SLEEP, // io
+    IO_STDIN_READ, // io
+    IO_STDOUT_WRITE, // io
+    IO_FS_CREATE, // io
+    IO_FS_DELETE, // io
+    IO_FS_TRUNCATE // io
 }op_code;
 
 

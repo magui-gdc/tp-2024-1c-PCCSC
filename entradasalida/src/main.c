@@ -29,7 +29,8 @@ int main(int argc, char* argv[]) {
 
 
     sem_t mutex_config;
-    sem_init(mutex_config, 0, 1);
+    sem_init(&mutex_config, 0, 1); //TODO: destruir semaforo/s
+    //TODO: llamar a inicializar_io(2), no sé si esto lo tiene que hacer el usuario o quién
 
     ////////////////////////////////////////////////////////
 
@@ -62,10 +63,30 @@ inicializar_io(char* nombre, t_config* archivo_config){
     t_io* interfaz = malloc(sizeof(t_io)); //TODO: free(interfaz)
     interfaz->nombre_id = nombre;
     interfaz->archivo = archivo_config;
-    sem_wait(mutex_config);
-    selector_carga_config(archivo_config);
+    sem_wait(&mutex_config);
+    IO_class clase = selector_carga_config(archivo_config);
     //TODO: desarrollar funciones según tipo
-    sem_post(mutex_config);
+    switch (clase)
+    {
+    case GEN:
+        char* tiempo = config.tiempo_unidad_trabajo;
+        uint32_t iteraciones; //TODO: conseguir las iteraciones
+        sleep(atoi(tiempo) * iteraciones);
+        //TODO: enviar flag de llegada de IO al kernel
+        break;
+    case IN:
+
+        break;
+    case OUT:
+
+        break;
+    case FS:
+
+        break;
+    default:
+        break;
+    }
+    sem_post(&mutex_config);
 }
 
 //////////////// CARGAR CONFIG SEGUN DISPOSITIVO IO  ////////////////
@@ -148,19 +169,24 @@ void paquete(int conexion) {
 void selector_carga_config (t_config* archivo_config){
 
     char* tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
-    
+    IO_class clase;
     if (strcmp(tipo_interfaz, "GENERICA") == 0) {
         cargar_config_struct_IO_gen(archivo_config);
+        clase = GEN;
     } else if (strcmp(tipo_interfaz, "STDIN") == 0) {
         cargar_config_struct_IO_in(archivo_config);
+        clase = IN;
     } else if (strcmp(tipo_interfaz, "STDOUT") == 0) {
         cargar_config_struct_IO_out(archivo_config);
+        clase = OUT;
     } else if (strcmp(tipo_interfaz, "DIALFS") == 0) {
         cargar_config_struct_IO_fs(archivo_config);
+        clase = FS;
     } else {
         printf("interfaz no reconocida XD: %s\n", tipo_interfaz); // como se pone el log de q esta mal!!!?????
+        clase = MISSING;
     }
-
+    return clase;
 }
 
 ////////////////////////// DIAL FS ////////////////////////////////////
