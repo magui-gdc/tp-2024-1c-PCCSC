@@ -150,22 +150,82 @@ void inicializar_memoria(){
 
 void crear_proceso(int pid, char* path){
     
-    FILE *archivo = fopen(path_instrucciones, "r");
+    //validacion del archivo de instrucciones
+    FILE *archivo = fopen(path, "r");
     if (!archivo) {
         log_error(logger, "el archivo del path '%s' no se abre :( ", path_instrucciones);
         return;
     }
 
-    /*
-    
-            IMPLEMENTATION COMING SOON
-    
-    
-    */
+    //creacion del pcb
+    t_pcb *proceso = malloc(sizeof(t_pcb));
+    proceso->estado = NEW;
+    proceso->quantum = config.quantum;
+    proceso->program_counter = 0;
+    proceso->pid = pid;
+
+    //variables aux:
+    char* linea = NULL;
+    int caracteres_leidos = 0, lenght = 0, pagina_actual = 0, offset = 0;
+
+    while((caracteres_leidos = getline(&linea,&lenght,archivo)) != -1 ){//si la linea se lee correctamente, caracteres_leidos hace que el while sea true
+        
+        if (pagina_actual >= memoria.num_frames) { //check de si queda memoria suficiente para el proceso
+            log_error(logger, "limite de memoria excedida para el proceso con pid %d", pid);
+            fclose(archivo);
+            free(linea);
+            free(proceso);
+            return;
+        }
+
+        if (offset + leidos > config.tam_pagina) { //check si la linea leida entra en en la pagina actual
+            pagina_actual++;    //si así sucede, se pasa a la siguiente pagina
+            offset = 0;         //y se reinicia el offset
+        }
+
+        int frame = encontrar_hueco();
+        if (frame == -1) { //check si hay espacio en este momento para la asignacion de memoria al proceso
+            log_error(logger, "no hay marcos libres para el proceso con pid %d", pid);
+            fclose(archivo);
+            free(linea);
+            free(proceso);
+            return;
+        }
+
+        /*
+        falta asignar la memoria!!! y checkear si el pusheo a la lista esta bien.
+        */
+
+    }
+
+
+    mqueue_push(monitor_NEW, proceso);
+
+    log_iniciar_proceso(logger, proceso->pid);
+
+    list_add(pcb_list, proceso);
+    pid++;
 
     fclose(archivo);
     log_info(logger, "proceso %d cargado en memoria yay!!", pid);
 }
+
+/*void iniciar_proceso(char *path){                 la funcion que estaba en kernel
+
+    t_pcb *proceso = malloc(sizeof(t_pcb));
+
+    proceso->estado = NEW;
+    proceso->quantum = config.quantum;
+    proceso->program_counter = 0; // arranca en 0?
+    proceso->pid = pid;
+
+    mqueue_push(monitor_NEW, proceso);
+
+    log_iniciar_proceso(logger, proceso->pid);
+
+    list_add(pcb_list, proceso);
+    pid++;
+}*/
 
 int encontrar_hueco() { //busco el hueco libre mas proximo!! 
     
