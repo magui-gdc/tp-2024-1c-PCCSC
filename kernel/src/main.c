@@ -5,14 +5,6 @@
 
 /* TODO:
 REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION Y DE INICIAR/DETENER PLANIFICACION (este commit está listo para probar eso)
-hilos de largo plazo (uno NEW->READY otro ALL->EXIT) listo.
-atender_cliente por cada modulo
-corto_plazo
-semaforos (plantear: info en lucid.app) listo.
-list_find funcion para comparar elementos listo. (¡¡FALTA PROBARLO!!)
-comunicacion kernel - memoria - cpu (codigos de operacion, sockets, leer instrucciones y serializar)
-instruccion ENUM con una funcion que delegue segun ENUM una funcion a ejecutar
-memoria para leer en proceso (ver commmons)
 */
 
 // ---------- CONSTANTES ---------- //
@@ -173,8 +165,7 @@ int main(int argc, char *argv[])
 // --------------------------- DEFINICION FUNCIONES KERNEL -----------------------------
 
 // -------------------- INICIO FCS. DE CONFIGURACION --------------------
-void cargar_config_struct_KERNEL(t_config *archivo_config)
-{
+void cargar_config_struct_KERNEL(t_config *archivo_config){
     config.puerto_escucha = config_get_string_value(archivo_config, "PUERTO_ESCUCHA");
     config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
     config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
@@ -711,6 +702,7 @@ void recibir_proceso_desalojado(){
                     if(cantidad_instancias_disponibles_recurso == 0){
                         // B) (WAIT) NO ESTA DISPONIBLE => se bloquea
                         recupera_contexto_proceso(buffer_wait); // actualizo PCB
+                        --proceso_desalojado->registros.PC; // para que vuelva a ejecutar WAIT RECURSO la próxima vez que se mande el proceso a RUNNING (cuando se lo desbloquee)
                         proceso_desalojado->estado = BLOCKED;
                         mqueue_push(monitores_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
                         log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BOCKED");
@@ -719,7 +711,7 @@ void recibir_proceso_desalojado(){
                     } else {
                         // C) (WAIT) SI ESTÁ DISPONIBLE
                         sem_wait(&mutex_instancias_recursos);
-                        instancias_recursos[posicion_recurso] = (char*)(cantidad_instancias_disponibles_recurso - 1); // resta una instancia a las instancias del recurso
+                        sprintf(instancias_recursos[posicion_recurso], "%d", (cantidad_instancias_disponibles_recurso - 1)); // resta una instancia a las instancias del recurso
                         sem_post(&mutex_instancias_recursos);
                         ++proceso_desalojado->recursos[posicion_recurso]; // agrega una instancia a los recursos del proceso en su PCB
                         respuesta_cpu = CONTINUAR;
@@ -729,10 +721,17 @@ void recibir_proceso_desalojado(){
                 case SIGNAL_RECURSO:
                     // B) (SIGNAL) LIBEERA UNA INSTANCIA DEL RECURSO Y DESBLOQUEA PRIMER PROCESO BLOQUEADO PARA EL RECURSO (si es que lo hay)
                     sem_wait(&mutex_instancias_recursos);
-                    instancias_recursos[posicion_recurso] = (char*)(cantidad_instancias_disponibles_recurso + 1); // suma una instancia a las instancias del recurso
+                    sprintf(instancias_recursos[posicion_recurso], "%d", (cantidad_instancias_disponibles_recurso + 1)); // suma una instancia a las instancias del recurso
                     sem_post(&mutex_instancias_recursos);
                     --proceso_desalojado->recursos[posicion_recurso]; // resta una instancia a los recursos del proceso en su PCB
-                    // TODO: verificar si hay algún proceso en el monitor del recurso y, si lo hay, sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!
+                    // verificar si hay algún proceso en el monitor del recurso 
+                    if(!mqueue_is_empty(monitores_recursos_bloqueados[posicion_recurso])){
+                        // sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!  creeeo que iría a READY para volver a ejecutar el WAIT (preguntar)
+                        t_pcb* proceso_desbloqueado = mqueue_pop(monitores_recursos_bloqueados[posicion_recurso]);
+                        proceso_desbloqueado->estado = READY; // Siempre es READY (no READY+) porque VRR sólo prioriza I/O Bound (no procesos bloqueados por un recurso)
+                        mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
+                        log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
+                    }
                     respuesta_cpu = CONTINUAR;
                     buffer_destroy(buffer_wait);
                 break;
@@ -763,6 +762,7 @@ void recibir_proceso_desalojado(){
             log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
             // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
         break;
+        
         case IO_GEN_SLEEP:
             t_sbuffer *buffer_gen_sleep = cargar_buffer(conexion_cpu_dispatch);
 
@@ -872,12 +872,12 @@ void *planificar_all_to_exit(void *args){
                 case BLOCKED:
                     // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
                     op_code estado_actual = proceso_exit->estado;
+                    liberar_recursos(proceso_exit); // puede asignar procesos a READY (BLOCKED -> READY) => va antes de liberar el grado de multiprogramación: (BLOCKED -> READY) > (NEW -> READY)
+                    // TODO: libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!
                     liberar_proceso_en_memoria(proceso_exit->pid);
-                    // TODO: libero recursos (en caso de tenerlos) => se podría agregar en el PCB un array de los recursos y otro para las interfaces que estaba utilizando hasta el momento, así se los libera desde acá
-                        // TODO: en el caso de los recursos, luego de sumar las instancias que correspondan en el archivo de configuracion, hacer un malloc del pcb en su atributo recursos!
                     log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
                     proceso_exit->estado = EXIT;
-                    sem_post(&contador_grado_multiprogramacion); // TODO: ANALIZAR SEGÚN LA DECISION QUE SE TOME SI CORRESPONDE LIBERAR MULTIPROGRAMACION PARA BLOCKED!
+                    sem_post(&contador_grado_multiprogramacion); 
                     break;
                 default:
                     break;
@@ -891,19 +891,41 @@ void *planificar_all_to_exit(void *args){
     return NULL;
 }
 
+void liberar_recursos(t_pcb* proceso_exit){
+    // libero recursos (en caso de tenerlos) y desbloqueo procesos bloqueados para el recurso liberado 
+    for (int i = 0; i < cantidad_recursos; i++){ // recorro por cada recurso existente en el sistema
+        int instancias_utilizadas = proceso_exit->recursos[i];
+        if(instancias_utilizadas != 0 ){ // si tengo al menos una instancia utilizada por el proceso actual para el recurso actual y aún no se la liberó
+            for (int j = 0; j < instancias_utilizadas; j++){ // recorro según la cantidad de instancias que tenía el proceso asociadas por recurso
+                // 1. Libero instancia desde instancias_recursos
+                sem_wait(&mutex_instancias_recursos);
+                sprintf(instancias_recursos[i], "%d", (atoi(instancias_recursos[i]) + 1));
+                sem_post(&mutex_instancias_recursos);
+
+                // 2. Consulto si existe un proceso que se bloqueó para este recurso
+                if(!mqueue_is_empty(monitores_recursos_bloqueados[i])){
+                    // 3. desbloqueo en dicho caso (todo lo demás se maneja dentro de la ejecución de dicho proceso)
+                    t_pcb* proceso_desbloqueado = mqueue_pop(monitores_recursos_bloqueados[i]);
+                    proceso_desbloqueado->estado = READY; // Siempre es READY (no READY+) porque VRR sólo prioriza I/O Bound (no procesos bloqueados por un recurso)
+                    mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
+                    log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
+                }
+
+                // 3. Resto una instancia dentro de los recursos del proceso actual
+                --proceso_exit->recursos[i];
+            }
+        }
+    }
+    // en el caso de los recursos, luego de sumar las instancias que correspondan en instancias_recursps, hacer un free de los recursos del proceso! (ya que no lo vamos a usar más)
+    free(proceso_exit->recursos);
+    proceso_exit->recursos = NULL;
+}
+
 void liberar_memoria_proceso(t_pcb* proceso){
     if (proceso != NULL){
         // LIBERAR MEMORIA = mandar socket a MEMORIA para que libere el espacio reservado para dicho proceso en la MEMORIA
         //free(proceso->path); // no se asigna de forma dinámica
 
-        // Si proceso->recursos es un array de punteros, se libera cada uno y luego el array
-        /*for (int i = 0; i < proceso->recursos_count; i++) {
-            free(proceso->recursos[i]);
-        }*/ //ACA NECESITO SABER LA CANTIDAD DE RECURSOS
-        // free(proceso->recursos); // no se asigna de forma dinámica
-
-        // Finalmente, se libera el propio proceso
-        //free(proceso); // no lo liberamos porque debe seguir guardado en EL PCB
     }   
 }
 
@@ -924,7 +946,7 @@ void* atender_cliente(void* cliente){
 
             // TODO: CARGAR STRUCT T_INTERFAZ
             t_interfaz* interfaz_conectada;
-            interfaz_conectada->nombre_interfaz = nombre_interfaz; // agregar malloc con strlen(nombre_interfaz)
+            interfaz_conectada->nombre_interfaz = nombre_interfaz; 
             interfaz_conectada->socket_interfaz = cliente_recibido;
             //(...)
             // según el tipo agregar al lista

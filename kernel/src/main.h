@@ -95,6 +95,7 @@ void recibir_proceso_desalojado();
 void recupera_contexto_proceso(t_sbuffer* buffer);
 t_pcb* buscar_pcb_por_pid(uint32_t);
 t_pcb* extraer_proceso(uint32_t pid, e_estado_proceso estado);
+void liberar_recursos(t_pcb* proceso_exit);
 void liberar_proceso_en_memoria(uint32_t pid_proceso);
 void enviar_interrupcion_a_cpu(t_pic interrupcion);
 
