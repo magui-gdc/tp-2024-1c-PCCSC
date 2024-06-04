@@ -47,6 +47,9 @@ sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_plani
 sem_t mutex_cambio_estado; // TODO: agregarlo donde corresponda (es un semáforo que controla que no se pase un proceso de una cola a otra mientras se está realizando una operación de FINALIZAR_PROCESO)
 sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (se pueedde consultar/modificar simultáneamente desde largo plazo EXIT como desdde corto plazo DESALOJO)
 
+// ---------- INTERFACES --------- //
+t_list* interfaces_genericas;
+
 int main(int argc, char *argv[])
 {
     // ------------ DECLARACION HILOS HIJOS PRINCIPALES ------------ //
@@ -73,6 +76,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < cantidad_recursos; i++)
         monitores_recursos_bloqueados[i] = mqueue_create();
 
+    interfaces_genericas = list_create();
 
     // -- INICIALIZACION SEMAFOROS -- //
     sem_init(&mutex_planificacion_pausada, 0, 1);
@@ -152,6 +156,9 @@ int main(int argc, char *argv[])
     sem_destroy(&orden_proceso_exit);
     sem_destroy(&mutex_cambio_estado);
     sem_destroy(&mutex_instancias_recursos);
+
+    list_destroy(interfaces_genericas);
+    list_destroy(pcb_list);
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -756,6 +763,35 @@ void recibir_proceso_desalojado(){
             log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
             // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
         break;
+        case IO_GEN_SLEEP:
+            t_sbuffer *buffer_gen_sleep = cargar_buffer(conexion_cpu_dispatch);
+
+            uint32_t length_io;
+            char* interfaz_solicitada = buffer_read_string(buffer_gen_sleep, &length_io);
+            interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
+            uint32_t tiempo = buffer_read_uint32(buffer_gen_sleep);
+            recupera_contexto_proceso(buffer_gen_sleep); // guarda contexto en PCB
+            char *mensaje_io = (char *)malloc(256);
+            sprintf(mensaje_io, "recibimos en IN_GEN_SLEEP interfaz %s", interfaz_solicitada);
+            log_debug(logger, "%s", mensaje_io);
+            free(mensaje_io);
+
+            // TODO: revisar si el nombre de la interfaz existe en la lista que corresponda => 1. si no existe EXIT, y sino avanzar
+            /*
+            mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
+            log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
+            sem_post(&orden_proceso_exit);
+            */
+            // TODO: si el tipo de interfaz es de tipo GENERICA => 1. si no es: EXIT, desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
+
+            // Respuesta a CPU
+            op_code respuesta_cpu_io = DESALOJAR;
+            ssize_t bytes_enviados_io = send(conexion_cpu_dispatch, &respuesta_cpu_io, sizeof(respuesta_cpu_io), 0);
+            if (bytes_enviados_io == -1) {
+                perror("Error enviando el dato");
+                exit(EXIT_FAILURE);
+            }
+        break;
         // (...)
     }
     sem_wait(&cambio_estado_desalojo);
@@ -880,8 +916,25 @@ void* atender_cliente(void* cliente){
 		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
 		switch (cod_op){
 		case CONEXION:
-			recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
+			//recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
+            t_sbuffer* buffer_conexion = cargar_buffer(cliente_recibido);
+            uint32_t length;
+            char* nombre_interfaz = buffer_read_string(buffer_conexion, &length);
+            nombre_interfaz[strcspn(nombre_interfaz, "\n")] = '\0';
+
+            // TODO: CARGAR STRUCT T_INTERFAZ
+            t_interfaz* interfaz_conectada;
+            interfaz_conectada->nombre_interfaz = nombre_interfaz; // agregar malloc con strlen(nombre_interfaz)
+            interfaz_conectada->socket_interfaz = cliente_recibido;
+            //(...)
+            // según el tipo agregar al lista
+            // AGREGAR T_INTERFAZ A LISTA DE INTERFACES (SE PUEDE CREAR UNA LISTA POR TIPO DE INTERFAZ)
+            list_add(interfaces_genericas, interfaz_conectada);
+
 			break;
+        case IO_GEN_SLEEP:
+            // TODO: la interfaz devuelve el proceso luego de ejecutar la instruccion IO_GEN_SLEEP y necesitas: desbloquear proceso actual y mandarlo a READY y además si hay un proceso bloqueado en la cola de esta interfaz, lo envías a la interfaz (hacer parecido lo mismo que hicimos en recibir_proceso_desalojado)
+        break;
         case RECIBI_INTERFAZ:   
             // cargar_buffer
             // buffer_read...

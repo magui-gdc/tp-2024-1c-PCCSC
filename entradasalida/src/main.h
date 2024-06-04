@@ -1,6 +1,7 @@
 #include <utils/utilsCliente.h>
 #include <commons/config.h>
 #include <utils/config.h>
+#include <utils/buffer.h>
 #include <semaphore.h>
 
 typedef struct

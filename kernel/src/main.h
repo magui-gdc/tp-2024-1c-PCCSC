@@ -22,6 +22,13 @@ typedef enum{
 } cod_desalojo; 
 // FINALIZAR_PROCESO ya está en op_code que es la estructura que se carga en el t_pic de cpu (para que CPU y KERNEL compartan mismos códigos de operación)
 
+typedef struct {
+    char* nombre_interfaz;
+    char* tipo_interfaz;
+    int socket_interfaz;
+    int disponibilidad; // 0: si esta libre; 1: si está siendo usado por otro proceso
+    t_mqueue* cola_bloqueados;
+} t_interfaz;
 
 typedef struct{
     char* puerto_escucha;

@@ -17,7 +17,16 @@ int main(int argc, char* argv[]) {
 
     // establecer conexion con KERNEL
     conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
-    enviar_conexion("Interfaz I/O", conexion_kernel);
+    //enviar_conexion("Interfaz I/O", conexion_kernel);
+    char* nombre_interfaz = "Interfaz1"; // TODO: TOMAR INTERFAZ DEL ARCHIVO CONFIG
+    t_sbuffer* buffer_conexion = buffer_create(
+        (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) // tamanio del string
+        // + sumar todos los sizeof de los valores que le vas a pasar (tipo_interfaz, path , ...)
+    );
+
+    buffer_add_string(buffer_conexion, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+    cargar_paquete(conexion_kernel, CONEXION, buffer_conexion);
+
     paquete(conexion_kernel);
     log_info(logger, "envie paquete a kernel");
     

@@ -265,7 +265,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
             t_sbuffer *buffer_desalojo_wait = buffer_create(
-                (uint32_t)strlen(recurso) +
+                (uint32_t)strlen(recurso) + sizeof(uint32_t) + //la longitud del string
                 sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
@@ -283,9 +283,30 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 break;
             }
         } else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
-            /*char* nombre_interfaz = tokens[1];
-            int* tiempo_sleep = atoi(tokens[2]);
-            io_gen_sleep(nombre_interfaz, tiempo_sleep);*/
+            char* nombre_interfaz = tokens[1];
+            uint32_t tiempo_sleep = (uint32_t)atoi(tokens[2]);
+            //io_gen_sleep(nombre_interfaz, tiempo_sleep);
+            t_sbuffer *buffer_interfaz_gen_sleep = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
+                sizeof(uint32_t) +
+                sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_gen_sleep, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_uint32(buffer_interfaz_gen_sleep,tiempo_sleep);
+            desalojo_proceso(&buffer_interfaz_gen_sleep, conexion_kernel, IO_GEN_SLEEP); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
         }
         // TODO: SEGUIR
     }
