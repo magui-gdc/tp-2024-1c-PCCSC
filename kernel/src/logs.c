@@ -47,3 +47,10 @@ void log_ingreso_ready(t_log* logger, t_mqueue* cola_ready){
     free(listado_pid);
     free(pid_str);
 }
+
+void log_bloqueo_proceso(t_log* logger, uint32_t pid, char* motivo){
+    char* mensaje = (char*)malloc(128);
+    sprintf(mensaje, "PID: %u - Bloqueado por: %s", pid, motivo);
+    log_info(logger, "%s", mensaje);
+    free(mensaje);
+}

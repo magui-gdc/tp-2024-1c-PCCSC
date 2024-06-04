@@ -84,7 +84,7 @@ void iniciar_proceso(char*);
 void interpretar_comando_kernel(char*, void*);
 void scripts_kernel(char*, void*);
 void enviar_proceso_a_cpu();
-void recibir_proceso_desalojado(t_config* archivo_config);
+void recibir_proceso_desalojado();
 void recupera_contexto_proceso(t_sbuffer* buffer);
 t_pcb* buscar_pcb_por_pid(uint32_t);
 t_pcb* extraer_proceso(uint32_t pid, e_estado_proceso estado);

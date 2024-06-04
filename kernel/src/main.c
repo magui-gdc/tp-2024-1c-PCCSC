@@ -24,23 +24,28 @@ const char *estado_proceso_strings[] = {
     "EXIT"
 };
 
+// ---------- CONEXIONES - SOCKETS ---------- //
+int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
+
+// ---------- GENERALES ---------- //
 config_struct config;
 t_list *pcb_list;
-// t_dictionary *pcb_dictionary; // dictionario dinamica que contiene los PCB de los procesos creados
 uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
 fc_puntero algoritmo_planificacion;
-
-uint8_t PLANIFICACION_PAUSADA;
-prcs_fin FINALIZACION;
-
 t_mqueue *monitor_READY_VRR;
 
+// ---------- FLAGS ---------- //
+uint8_t PLANIFICACION_PAUSADA;
+
+// ---------- RECURSOS - BLOQUEO ---------- //
 int cantidad_recursos; // cantidad total de recursos grabados en el archivo de configuracion
+char** instancias_recursos; // instancias disponibles por recurso
 t_mqueue** monitores_recursos_bloqueados; // para cada recurso del archivo configuración se va a cargar un monitor en este array de monitores, donde se encolarán los procesos que fueron bloqueados por cada recurso!
 
+// ---------- SEMAFOROS ---------- //
 sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, listo_proceso_en_running, orden_proceso_exit, cambio_estado_desalojo;
 sem_t mutex_cambio_estado; // TODO: agregarlo donde corresponda (es un semáforo que controla que no se pase un proceso de una cola a otra mientras se está realizando una operación de FINALIZAR_PROCESO)
-int conexion_cpu_dispatch, conexion_memoria, conexion_cpu_interrupt;
+sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (se pueedde consultar/modificar simultáneamente desde largo plazo EXIT como desdde corto plazo DESALOJO)
 
 int main(int argc, char *argv[])
 {
@@ -59,6 +64,7 @@ int main(int argc, char *argv[])
     pcb_list = list_create();
     crear_monitores();
     cantidad_recursos = string_array_size(config.recursos);
+    instancias_recursos = config_get_array_value(archivo_config, "INSTANCIAS");
     monitores_recursos_bloqueados = malloc(cantidad_recursos * sizeof(t_mqueue*));
     if (monitores_recursos_bloqueados == NULL) {
         log_error(logger, "NO se pudo asignar espacio para monitores de recursos bloqueados");
@@ -76,6 +82,7 @@ int main(int argc, char *argv[])
     sem_init(&orden_proceso_exit, 0, 0);
     sem_init(&cambio_estado_desalojo, 0, 1);
     sem_init(&mutex_cambio_estado,0,1);
+    sem_init(&mutex_instancias_recursos, 0, 1); 
 
     decir_hola("Kernel");
 
@@ -144,6 +151,7 @@ int main(int argc, char *argv[])
     sem_destroy(&cambio_estado_desalojo);
     sem_destroy(&orden_proceso_exit);
     sem_destroy(&mutex_cambio_estado);
+    sem_destroy(&mutex_instancias_recursos);
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -266,6 +274,7 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                             // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
                             t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado->pid, proceso_buscado->estado); // lo saco de su cola actual
                             mqueue_push(monitor_EXIT, proceso_encontrado); // lo agrego a EXIT
+                            log_finaliza_proceso(logger, proceso_encontrado->pid, "INTERRUPTED_BY_USER");
                             sem_post(&orden_proceso_exit);
                         }
                         }
@@ -351,7 +360,7 @@ void *planificar_corto_plazo(void *archivo_config){
             enviar_proceso_a_cpu();
 
             // 3. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
-            recibir_proceso_desalojado((t_config *)archivo_config);
+            recibir_proceso_desalojado();
         }
         else{
             sem_post(&mutex_planificacion_pausada);
@@ -616,7 +625,7 @@ void enviar_proceso_a_cpu(){
 }
 
 // -------- RECIBIR PROCESO DESALOJADO Y MANEJAR SU MOTIVOS DE DESALOJO
-void recibir_proceso_desalojado(t_config* archivo_config){
+void recibir_proceso_desalojado(){
     int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
     
     t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
@@ -646,21 +655,25 @@ void recibir_proceso_desalojado(t_config* archivo_config){
             t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
             recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
-            // TODO: log de finalización de proceso!!!! (según MENSAJE_DESALOJO)
+            if(mensaje_desalojo == EXIT_PROCESO)
+                log_finaliza_proceso(logger, proceso_desalojado->pid, "SUCCESS");
+            else 
+                log_finaliza_proceso(logger, proceso_desalojado->pid, "INTERRUPTED_BY_USER");
             // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
             sem_post(&orden_proceso_exit);
-            break;
+        break;
 
         case WAIT_RECURSO:
-            // 1. carga el buffer (1. paso en la mayoría de los mensajes de desalojo )
+        case SIGNAL_RECURSO:
+            // 1. carga (1. paso en la mayoría de los mensajes de desalojo )
             t_sbuffer *buffer_wait = cargar_buffer(conexion_cpu_dispatch);
 
-            // 2. lee únicamente (debería ser guardado en primer lugar) el nombre del recurso que pide la CPU utilizar
+            // 2. lee únicamente el nombre del recurso que pide utilizar la CPU 
             uint32_t length;
             char* recurso_solicitado = buffer_read_string(buffer_wait, &length);
             recurso_solicitado[strcspn(recurso_solicitado, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
             char *mensaje = (char *)malloc(256);
-            sprintf(mensaje, "recibimos en WAIT recurso %s", recurso_solicitado);
+            sprintf(mensaje, "recibimos en WAIT/SIGNAL recurso %s", recurso_solicitado);
             log_debug(logger, "%s", mensaje);
             free(mensaje);
 
@@ -678,46 +691,71 @@ void recibir_proceso_desalojado(t_config* archivo_config){
             if(posicion_recurso == -1){
                 recupera_contexto_proceso(buffer_wait); // actualizo PCB
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
-                // TODO: log de finalización de proceso!!!! (según MENSAJE_DESALOJO)
+                log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
                 sem_post(&orden_proceso_exit);
                 respuesta_cpu = DESALOJAR;
             } else {
-                char** instancias_recursos = config_get_array_value(archivo_config, "INSTANCIAS");
+                sem_wait(&mutex_instancias_recursos);
                 int cantidad_instancias_disponibles_recurso = atoi(instancias_recursos[posicion_recurso]);
-                if(cantidad_instancias_disponibles_recurso == 0){
-                    // B) NO ESTA DISPONIBLE => se bloquea
-                    recupera_contexto_proceso(buffer_wait); // actualizo PCB
-                    // TODO: manda el proceso al monitor del recurso (se bloquea) mqueue_push(monitor_BLOQUEO_RECURSO, mqueue_pop(monitor_RUNNING))
-                    respuesta_cpu = DESALOJAR;
-                } else {
-                    // C) SI ESTÁ DISPONIBLE
-                    // TODO: resta una instancia a las instancias del recurso
+                sem_post(&mutex_instancias_recursos);
+                // A PARTIR DE ACÁ COMPORTAMIENTO DEFINIDO POR LA OPERACIÓN RECIBIDA:
+                switch (mensaje_desalojo){
+                case WAIT_RECURSO:
+                    if(cantidad_instancias_disponibles_recurso == 0){
+                        // B) (WAIT) NO ESTA DISPONIBLE => se bloquea
+                        recupera_contexto_proceso(buffer_wait); // actualizo PCB
+                        proceso_desalojado->estado = BLOCKED;
+                        mqueue_push(monitores_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
+                        log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BOCKED");
+                        log_bloqueo_proceso(logger,proceso_desalojado->pid, recurso_solicitado);
+                        respuesta_cpu = DESALOJAR;
+                    } else {
+                        // C) (WAIT) SI ESTÁ DISPONIBLE
+                        sem_wait(&mutex_instancias_recursos);
+                        instancias_recursos[posicion_recurso] = (char*)(cantidad_instancias_disponibles_recurso - 1); // resta una instancia a las instancias del recurso
+                        sem_post(&mutex_instancias_recursos);
+                        ++proceso_desalojado->recursos[posicion_recurso]; // agrega una instancia a los recursos del proceso en su PCB
+                        respuesta_cpu = CONTINUAR;
+                        buffer_destroy(buffer_wait);
+                    }
+                break;
+                case SIGNAL_RECURSO:
+                    // B) (SIGNAL) LIBEERA UNA INSTANCIA DEL RECURSO Y DESBLOQUEA PRIMER PROCESO BLOQUEADO PARA EL RECURSO (si es que lo hay)
+                    sem_wait(&mutex_instancias_recursos);
+                    instancias_recursos[posicion_recurso] = (char*)(cantidad_instancias_disponibles_recurso + 1); // suma una instancia a las instancias del recurso
+                    sem_post(&mutex_instancias_recursos);
+                    --proceso_desalojado->recursos[posicion_recurso]; // resta una instancia a los recursos del proceso en su PCB
+                    // TODO: verificar si hay algún proceso en el monitor del recurso y, si lo hay, sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!
                     respuesta_cpu = CONTINUAR;
                     buffer_destroy(buffer_wait);
+                break;
                 }
             }
 
             // 4. respuesta a CPU
-            // TODO: DEVUELVE A CPU PROCESO CON MENSAJE CARGADO EN RESPUESTA_CPU
+            ssize_t bytes_enviados = send(conexion_cpu_dispatch, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+            if (bytes_enviados == -1) {
+                perror("Error enviando el dato");
+                exit(EXIT_FAILURE);
+            }
 
             if(respuesta_cpu == CONTINUAR){
-                // TODO: vuelve a ejecutar recibir_proceso_desalojado() para que kernel vuelva a esperar mensaje de desalojo del mismo proceso!
+                sem_wait(&cambio_estado_desalojo);
+                proceso_desalojado->desalojo = SIN_DESALOJAR; 
+                sem_post(&cambio_estado_desalojo);
+                recibir_proceso_desalojado(); //vuelve a ejecutar recibir_proceso_desalojado() para que kernel vuelva a esperar mensaje de desalojo del mismo proceso!
             }
             
-            break;
-
-        case SIGNAL_RECURSO:
-            break;
-
+        break;
         case FIN_QUANTUM:
-            log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
             t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
             recupera_contexto_proceso(buffer_desalojo);
             proceso_desalojado->estado = READY;
             mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
             log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
+            log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
             // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
-            break;
+        break;
         // (...)
     }
     sem_wait(&cambio_estado_desalojo);
@@ -735,13 +773,12 @@ void recibir_proceso_desalojado(t_config* archivo_config){
 void recupera_contexto_proceso(t_sbuffer* buffer){
     t_pcb* proceso = mqueue_peek(monitor_RUNNING); 
     buffer_read_registros(buffer, &(proceso->registros));
+    buffer_destroy(buffer);
 
     char *mensaje = (char *)malloc(256);
     sprintf(mensaje, "PC: %u, AX: %u, BX: %u, CX: %u, DX: %u, EAX: %u, EBX: %u, ECX: %u, EDX: %u, SI: %u, DI: %u", proceso->registros.PC, proceso->registros.AX, proceso->registros.BX, proceso->registros.CX, proceso->registros.DX, proceso->registros.EAX, proceso->registros.EBX, proceso->registros.ECX, proceso->registros.EDX, proceso->registros.SI, proceso->registros.DI );
     log_debug(logger, "%s", mensaje);
-
     free(mensaje);
-    buffer_destroy(buffer);
 }
 // ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

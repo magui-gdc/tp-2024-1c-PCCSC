@@ -261,29 +261,28 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
-        } else if (strcmp(comando, "WAIT")){
+        } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
+            op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
             t_sbuffer *buffer_desalojo_wait = buffer_create(
                 (uint32_t)strlen(recurso) +
                 sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
             buffer_add_string(buffer_desalojo_wait, (uint32_t)strlen(recurso), recurso);
-            desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, WAIT_RECURSO);
-            int respuesta = recibir_operacion(conexion_kernel);
-                switch (respuesta){
-                case DESALOJAR:
-                    /* TODO: evaluar si hay que agregar algo más */
-                    seguir_ejecucion = 0;
-                    desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                    break;
-                case CONTINUAR:
-                    /* TODO: creo que en este caso no haría nada.... */
-                    break;
-                }
-        } else if (strcmp(comando, "SIGNAL")){
-            
-        } else if (strcmp(comando, "IO_GEN_SLEEP")){
+            desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, instruccion_recurso); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
             /*char* nombre_interfaz = tokens[1];
             int* tiempo_sleep = atoi(tokens[2]);
             io_gen_sleep(nombre_interfaz, tiempo_sleep);*/
@@ -336,7 +335,7 @@ void* recibir_interrupcion(void* conexion){
                 // a modo de log: CAMBIAR DESPUÉS
                 char* mensaje = (char*)malloc(128);
                 sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
-                log_info(logger, "%s", mensaje);
+                log_debug(logger, "%s", mensaje);
                 free(mensaje);
             }
             break;
