@@ -24,7 +24,9 @@ typedef enum
     IO_STDOUT_WRITE, // io
     IO_FS_CREATE, // io
     IO_FS_DELETE, // io
-    IO_FS_TRUNCATE // io
+    IO_FS_TRUNCATE, // io
+	DESALOJAR, // KERNEL - CPU 
+	CONTINUAR // KERNEL - CPU
 }op_code;
 
 
