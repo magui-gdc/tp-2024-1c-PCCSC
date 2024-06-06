@@ -18,19 +18,42 @@ typedef struct {
     char* retardo_respuesta;
 } config_struct;
 
-typedef struct {
-    void* espacio_usuario;
-    int num_frames;
-    int* tabla_paginas;
-} t_memoria;
+typedef struct{ // SIEMPRE CARGADO EN MEMORIA
+    t_tabla_paginas** tabla_paginas;
+    int cant_tablas;
+    bool presence;
+} t_lista_tablas;
 
-extern t_memoria memoria;
+typedef struct{
+    u_int32_t pid;  //PID DEL PROCESO ASOCIADO A LA TABLA
+    t_pagina** paginas;
+} t_tabla_paginas;
+
+typedef struct{
+    u_int32_t frame;   //checkear tipo de dato
+    u_int32_t offset;  //checkear tipo de dato
+    bool presence;
+} t_pagina;
+
+typedef struct{
+    u_int32_t pid;
+    int pagina;
+} t_frame;
+
 extern config_struct config;
+extern t_lista_tablas lista_tablas;
+extern t_frame** frames_libres; //"bitmap" de frames libres 
+extern int cant_frames = 0;
 
 void cargar_config_struct_MEMORIA(t_config*);
 
-/////// funciones memoria
-void inicializar_memoria();
+// inicializacion de las estructuras necesarias para la paginacion
+void init_paginacion();
+void init_lista_tablas();
+void free_lista_tablas();
+void free_tabla_paginas(t_tabla_paginas);
+void free_pagina(t_pagina);
+void init_bitmap_frames();
+
 void crear_proceso(int,char*);
-void encontrar_hueco(); //funcion auxiliar para encontrar un espacio libre en la tabla de paginas uwu
 void eliminar_proceso(int);

@@ -367,7 +367,7 @@ void consola_interactiva(char* ruta_archivo){
     }*/
 }
 
-// esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
+/*/ esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
 void iniciar_proceso(char *path){
 
     t_pcb *proceso = malloc(sizeof(t_pcb));
@@ -384,7 +384,7 @@ void iniciar_proceso(char *path){
     list_add(pcb_list, proceso);
     pid++;
 }
-
+*/
 /*
 void finalizar_proceso(char* pid_buscado){
 

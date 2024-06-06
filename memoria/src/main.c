@@ -134,114 +134,53 @@ void *atender_cliente(void *cliente)
     }
 }
 
-////// funciones memoria
-
-void inicializar_memoria(){
-
-    memoria.num_frames = config.tam_memoria / config.tam_pagina;    //calculo del espacio de los frames
-    memoria.espacio_usuario = malloc(config.tam_memoria);           
-    memoria.tabla_paginas = malloc(memoria.num_frames * sizeof(int));
-
-    for (int i = 0; i < memoria.num_frames; i++) { //esto es para recorrer la tabla e inicializarla toda en -1 
-        memoria.tabla_paginas[i] = -1;
-    } 
-
+void init_paginacion(){
+    init_lista_tablas();
+    init_bitmap_frames();
+    // iniciar algoritmo del tcb
 }
 
-void crear_proceso(int pid, char* path){
-    
-    //validacion del archivo de instrucciones
-    FILE *archivo = fopen(path, "r");
-    if (!archivo) {
-        log_error(logger, "el archivo del path '%s' no se abre :( ", path_instrucciones);
-        return;
+void init_lista_tablas(){
+    lista_tablas = malloc(t_lista_tablas);
+
+    if(!lista_tablas){
+        //hacer algo???
+        log_error(logger, "error al inicializar la lista de tablas de paginas :( ");
+        exit(EXIT_FAILURE);
     }
-
-    //creacion del pcb
-    t_pcb *proceso = malloc(sizeof(t_pcb));
-    proceso->estado = NEW;
-    proceso->quantum = config.quantum;
-    proceso->program_counter = 0;
-    proceso->pid = pid;
-
-    //variables aux:
-    char* linea = NULL;
-    int caracteres_leidos = 0, lenght = 0, pagina_actual = 0, offset = 0;
-
-    while((caracteres_leidos = getline(&linea,&lenght,archivo)) != -1 ){//si la linea se lee correctamente, caracteres_leidos hace que el while sea true
-        
-        if (pagina_actual >= memoria.num_frames) { //check de si queda memoria suficiente para el proceso
-            log_error(logger, "limite de memoria excedida para el proceso con pid %d", pid);
-            fclose(archivo);
-            free(linea);
-            free(proceso);
-            return;
-        }
-
-        if (offset + leidos > config.tam_pagina) { //check si la linea leida entra en en la pagina actual
-            pagina_actual++;    //si así sucede, se pasa a la siguiente pagina
-            offset = 0;         //y se reinicia el offset
-        }
-
-        int frame = encontrar_hueco();
-        if (frame == -1) { //check si hay espacio en este momento para la asignacion de memoria al proceso
-            log_error(logger, "no hay marcos libres para el proceso con pid %d", pid);
-            fclose(archivo);
-            free(linea);
-            free(proceso);
-            return;
-        }
-
-        /*
-        falta asignar la memoria!!! y checkear si el pusheo a la lista esta bien.
-        */
-
-    }
-
-
-    mqueue_push(monitor_NEW, proceso);
-
-    log_iniciar_proceso(logger, proceso->pid);
-
-    list_add(pcb_list, proceso);
-    pid++;
-
-    fclose(archivo);
-    log_info(logger, "proceso %d cargado en memoria yay!!", pid);
 }
 
-/*void iniciar_proceso(char *path){                 la funcion que estaba en kernel
+void init_bitmap_frames(){
+    frames_libres = list_create();
 
-    t_pcb *proceso = malloc(sizeof(t_pcb));
-
-    proceso->estado = NEW;
-    proceso->quantum = config.quantum;
-    proceso->program_counter = 0; // arranca en 0?
-    proceso->pid = pid;
-
-    mqueue_push(monitor_NEW, proceso);
-
-    log_iniciar_proceso(logger, proceso->pid);
-
-    list_add(pcb_list, proceso);
-    pid++;
-}*/
-
-int encontrar_hueco() { //busco el hueco libre mas proximo!! 
-    
-    for (int i = 0; i < memoria.num_frames; i++) {
-        if (memoria.tabla_paginas[i] == -1) {
-            return i;
-        }
+    if (!frames_libres) {
+        //hacer algo???
+        log_error(logger, "error al inicializar el bitmap de frames libres :(");
+        exit(EXIT_FAILURE);
     }
-    return -1;
+
+    cant_frames = config.tam_memoria/config.tam_pagina;
+
+    for(int i=cant_frames, i>0, i--){
+        t_frame* frame = malloc(sizeof(t_frame));
+        frame->pid = -1;
+        frame->pagina = -1;
+        list_add(frames_libre, frame);
+    }
 }
 
-void eliminar_proceso(int pid) { //vuelvo a poner la tabla en -1!!! yay
-    for (int i = 0; i < memoria.num_frames; i++) {
-        if (memoria.tabla_paginas[i] == pid) {
-            memoria.tabla_paginas[i] = -1;
-        }
+void free_lista_tablas(){
+    for(int i = lista_tablas.cant_tablas, i>0, i--){
+        free_tabla_paginas(lista_tablas.tabla_paginas[i]);
     }
-    log_info(logger, "proceso %d eliminado", pid);
+}
+
+void free_tabla_paginas(t_tabla_paginas tabla_paginas){
+    for (int i = 0; tabla->paginas[i] != NULL; i++){
+        free_pagina(tabla->paginas[i]);
+    }
+}
+
+void free_pagina(t_pagina pagina){
+    free(pagina);
 }
