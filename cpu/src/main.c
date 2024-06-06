@@ -5,6 +5,7 @@
 #include "main.h"
 #include "instrucciones.h"
 
+t_list* tlb_list;
 
 config_struct config;
 t_registros_cpu registros; 
@@ -22,6 +23,8 @@ int main(int argc, char* argv[]) {
     t_config* archivo_config = iniciar_config("cpu.config");    
     cargar_config_struct_CPU(archivo_config);
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
+
+    tlb_list = list_create();
 
     list_interrupciones = list_create();
     sem_init(&mutex_lista_interrupciones, 0, 1);

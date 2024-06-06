@@ -26,7 +26,9 @@ typedef enum
     IO_FS_DELETE, // io
     IO_FS_TRUNCATE, // io
 	DESALOJAR, // KERNEL - CPU 
-	CONTINUAR // KERNEL - CPU
+	CONTINUAR, // KERNEL - CPU
+	TLB_MISS, //CPU - MEMORIA
+	FRAME_SOLICIDATO // MEMORIA - CPU
 }op_code;
 
 
