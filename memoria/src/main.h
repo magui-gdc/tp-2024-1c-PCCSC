@@ -41,6 +41,7 @@ typedef struct{
 } t_frame;
 
 extern config_struct config;
+extern void* memoria;   //el "espacio de usario", la "memoria real"
 extern t_lista_tablas lista_tablas;
 extern t_frame** frames_libres; //"bitmap" de frames libres 
 extern int cant_frames = 0;
@@ -48,6 +49,7 @@ extern int cant_frames = 0;
 void cargar_config_struct_MEMORIA(t_config*);
 
 // inicializacion de las estructuras necesarias para la paginacion
+void init_memoria();
 void init_paginacion();
 void init_lista_tablas();
 void free_lista_tablas();
@@ -57,3 +59,13 @@ void init_bitmap_frames();
 
 void crear_proceso(int,char*);
 void eliminar_proceso(int);
+
+t_pagina new_pagina();
+t_tabla_paginas new_tabla_paginas();
+bool pagina_valida(t_pagina);
+bool pagina_presente(t_pagina); //consulta pagina cargada en memoria
+
+int consulta_marco(t_pagina);
+int buscar_marco_libre();
+
+void aplicar_retardo(); 

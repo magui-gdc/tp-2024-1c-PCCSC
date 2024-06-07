@@ -134,7 +134,18 @@ void *atender_cliente(void *cliente)
     }
 }
 
+void init_memoria(){
+    memoria = malloc(config.tam_memoria);
+
+    if(!memoria){
+        //hacer algo???
+        log_error(logger, "error al inicializar la memoria de usuario :( ");
+        exit(EXIT_FAILURE);
+    }
+}
+
 void init_paginacion(){
+    init_memoria(); //esto va aca?????
     init_lista_tablas();
     init_bitmap_frames();
     // iniciar algoritmo del tcb
@@ -183,4 +194,21 @@ void free_tabla_paginas(t_tabla_paginas tabla_paginas){
 
 void free_pagina(t_pagina pagina){
     free(pagina);
+}
+
+t_pagina new_pagina();
+t_tabla_paginas new_tabla_paginas();
+bool pagina_valida(t_pagina);
+bool pagina_presente(t_pagina pagina){ //esto esta bien escrito???!
+    if(pagina.presence){
+        return TRUE;
+    }
+    else{return FALSE}
+}
+
+int consulta_marco(t_pagina);
+int buscar_marco_libre();
+
+void aplicar_retardo(){
+    sleep(config.retardo_respuesta);    // asi nomas???
 }
