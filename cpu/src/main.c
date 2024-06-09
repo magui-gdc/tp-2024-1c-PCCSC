@@ -63,7 +63,7 @@ int main(int argc, char* argv[]) {
         case EJECUTAR_PROCESO:
             seguir_ejecucion = 1;
             desalojo = 0;
-            log_info(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
+            log_debug(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
             t_sbuffer *buffer_dispatch = cargar_buffer(cliente_kernel);
@@ -75,7 +75,7 @@ int main(int argc, char* argv[]) {
             // a modo de log: CAMBIAR DESPUÉS
             char* mensaje = (char*)malloc(128);
             sprintf(mensaje, "Recibi para ejecutar el proceso %u, junto a PC %u", pid_proceso, registros.PC);
-            log_info(logger, "%s", mensaje);
+            log_debug(logger, "%s", mensaje);
             free(mensaje);
 
             // comienzo ciclo instrucciones
@@ -137,7 +137,7 @@ void ciclo_instruccion(int conexion_kernel){
     buffer_add_uint32(buffer, registros.PC);
     
     cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
-    log_info(logger, "envio orden lectura a memoria");
+    log_debug(logger, "envio orden lectura a memoria");
 
     // TODO: CPU ESPERA POR DETERMINADO TIEMPO A MEMORIA, y sino sigue ¿?
     if(recibir_operacion(conexion_memoria) == INSTRUCCION){
@@ -155,9 +155,6 @@ void ciclo_instruccion(int conexion_kernel){
         check_interrupt(pid_proceso, conexion_kernel);
       
         // IMPORTANTE: si por algun motivo se va a la mrd (INT, EXIT O INST como WAIT (ver si deja de ejecutar)): seguir_ejecutando = 0 + desalojo = 1;
-
-        // Se suma 1 al Program Counter
-        registros.PC++;
 
         // libero recursos
         free(leido);
@@ -201,12 +198,15 @@ t_list* filtrar_y_remover_lista(t_list* lista_original, bool(*condicion)(void*, 
 }
 
 void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
+    log_debug(logger, "chequeando interrupciones");
     sem_wait(&mutex_lista_interrupciones);
     if(!list_is_empty(list_interrupciones)){
         sem_post(&mutex_lista_interrupciones);
+        log_debug(logger, "hay interupciones");
         // remueve las interrupciones del proceso actual aun si el proceso ya fue desalojado => para que no se traten en la prox. ejecucion (si es que vuelve a ejecutar)
         t_list* interrupciones_proceso_actual = filtrar_y_remover_lista(list_interrupciones, coinciden_pid, proceso_pid);
-        if(!interrupciones_proceso_actual && desalojo == 0){ // procesamos la interrupcion si todavia no se desalojo la ejecucion del proceso durante el proceso de EJECUCION
+        if(!list_is_empty(interrupciones_proceso_actual) && desalojo == 0){ // procesamos la interrupcion si todavia no se desalojo la ejecucion del proceso durante el proceso de EJECUCION
+            log_debug(logger, "hay interrupciones para el pid seleccionado");
             list_sort(interrupciones_proceso_actual, comparar_prioridad);
             // solo proceso la interrupcion de mas prioridad, que sera la primera!
             seguir_ejecucion = 0;
@@ -216,7 +216,7 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
 
             char *mensaje = (char *)malloc(128);
             sprintf(mensaje, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
-            log_info(logger, "%s", mensaje);
+            log_debug(logger, "%s", mensaje);
             free(mensaje);
         }
         list_clean_and_destroy_elements(interrupciones_proceso_actual, free); // Libera cada elemento en la lista filtrada
@@ -230,7 +230,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // TODO: MMU en caso de traducción dire. lógica a dire. física
     char *mensaje = (char *)malloc(128);
     sprintf(mensaje, "CPU: LINEA DE INSTRUCCION %s", leido);
-    log_info(logger, "%s", mensaje);
+    log_debug(logger, "%s", mensaje);
     free(mensaje);
 
     char **tokens = string_split(leido, " ");
@@ -242,15 +242,18 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             set(parametro1, parametro2);
+            registros.PC++; // Se suma 1 al Program Counter
         } else 
         if (strcmp(comando, "SUM") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUM(parametro1, parametro2, logger);
+            registros.PC++; // Se suma 1 al Program Counter
         } else if (strcmp(comando, "SUB") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUB(parametro1, parametro2);
+            registros.PC++; // Se suma 1 al Program Counter
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
             desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
@@ -261,6 +264,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
+            registros.PC++; // Se suma 1 al Program Counter (TODO: evaluar según INSTRUCCION)
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
@@ -270,6 +274,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
             buffer_add_string(buffer_desalojo_wait, (uint32_t)strlen(recurso), recurso);
+            char *msg_recurso = (char *)malloc(128);
+            sprintf(msg_recurso, "Recurso pedido a kernel %s", recurso);
+            log_debug(logger, "%s", msg_recurso);
+            free(msg_recurso);
             desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, instruccion_recurso); // agrega ctx en el buffer y envía paquete a kernel
 
             int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
@@ -277,9 +285,11 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             case DESALOJAR:
                 seguir_ejecucion = 0;
                 desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                log_debug(logger, "desalojar proceso");
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                registros.PC++; // Se suma 1 al Program Counter
                 break;
             }
         } else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
@@ -302,6 +312,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             case DESALOJAR:
                 seguir_ejecucion = 0;
                 desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                registros.PC++; // Se suma 1 al Program Counter
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
@@ -330,7 +341,8 @@ void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, 
 
 void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;
-    while((interrupcion_kernel = esperar_cliente(servidor_interrupt)) != -1){
+    interrupcion_kernel = esperar_cliente(servidor_interrupt);
+    while(1){
         int cod_op = recibir_operacion(interrupcion_kernel);
         switch (cod_op){
         case CONEXION:
@@ -338,7 +350,7 @@ void* recibir_interrupcion(void* conexion){
             break;
         case INTERRUPCION:
             
-            log_info(logger, "RECIBISTE ALGO EN INTERRUPCION");
+            log_debug(logger, "RECIBISTE ALGO EN INTERRUPCION");
             t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
             
             // guarda datos del buffer (contexto de proceso)

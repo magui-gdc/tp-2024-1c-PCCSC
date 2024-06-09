@@ -42,12 +42,6 @@ typedef struct{
     int quantum;
 } config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
-/*
-typedef struct{ //LO DEFINO ASI PORQUE NO SABEMOS COMO SON LOS RECURSOS AUN
-    char* recursoNombre;
-}t_recurso;
-*/
-
 typedef struct {
     uint32_t pid;
     op_code motivo_interrupcion;
@@ -67,6 +61,11 @@ typedef struct {
     DESALOJADO: volvió de CPU y todavía no se trató su mensaje de desalojo, 
     PEDIDO_FINALIZACION: se ejecutó finaliza_proceso desde consola*/
 } t_pcb; // PCB
+
+typedef struct {
+    char algoritmo[4];
+    t_pcb* proceso_running;
+} control_quantum_params;
 
 typedef struct {
     uint8_t FLAG_FINALIZACION;
@@ -101,7 +100,7 @@ void enviar_interrupcion_a_cpu(t_pic interrupcion);
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();
-void algortimo_fifo();
+void algoritmo_fifo();
 void algoritmo_rr();
 void algoritmo_vrr();
 void* control_quantum(void*);
