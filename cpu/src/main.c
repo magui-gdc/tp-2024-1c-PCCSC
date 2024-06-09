@@ -242,18 +242,15 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             set(parametro1, parametro2);
-            registros.PC++; // Se suma 1 al Program Counter
         } else 
         if (strcmp(comando, "SUM") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUM(parametro1, parametro2, logger);
-            registros.PC++; // Se suma 1 al Program Counter
         } else if (strcmp(comando, "SUB") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUB(parametro1, parametro2);
-            registros.PC++; // Se suma 1 al Program Counter
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
             desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
@@ -264,7 +261,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
-            registros.PC++; // Se suma 1 al Program Counter (TODO: evaluar según INSTRUCCION)
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
@@ -289,7 +285,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                registros.PC++; // Se suma 1 al Program Counter
                 break;
             }
         } else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
@@ -312,7 +307,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             case DESALOJAR:
                 seguir_ejecucion = 0;
                 desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                registros.PC++; // Se suma 1 al Program Counter
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
@@ -320,6 +314,8 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             }
         }
         // TODO: SEGUIR
+
+        registros.PC++; // Se suma 1 al Program Counter
     }
     string_array_destroy(tokens);
 }

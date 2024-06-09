@@ -717,19 +717,21 @@ void recibir_proceso_desalojado(){
                 case SIGNAL_RECURSO:
                     // B) (SIGNAL) LIBEERA UNA INSTANCIA DEL RECURSO Y DESBLOQUEA PRIMER PROCESO BLOQUEADO PARA EL RECURSO (si es que lo hay)
                     sem_wait(&mutex_instancias_recursos);
-                    sprintf(instancias_recursos[posicion_recurso], "%d", (atoi(instancias_recursos[posicion_recurso]) + 1)); // suma una instancia a las instancias del recurso
-                    --proceso_desalojado->recursos[posicion_recurso]; // resta una instancia a los recursos del proceso en su PCB
+                    if(proceso_desalojado->recursos[posicion_recurso] > 0) --proceso_desalojado->recursos[posicion_recurso]; // podría hacer el signal sin hacer antes un wait!
                     // verificar si hay algún proceso en el monitor del recurso 
                     if(!queue_is_empty(cola_recursos_bloqueados[posicion_recurso])){
-                        // sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!  creeeo que iría a READY para volver a ejecutar el WAIT (preguntar)
+                        // sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!
                         t_pcb* proceso_desbloqueado = queue_pop(cola_recursos_bloqueados[posicion_recurso]);
+                        ++proceso_desbloqueado->recursos[posicion_recurso];
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
                         proceso_desbloqueado->estado = READY; // Siempre es READY (no READY+) porque VRR sólo prioriza I/O Bound (no procesos bloqueados por un recurso)
                         mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
                         log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
                         sem_post(&orden_planificacion); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
-                    } else 
+                    } else {
+                        sprintf(instancias_recursos[posicion_recurso], "%d", (atoi(instancias_recursos[posicion_recurso]) + 1)); // suma una instancia a las instancias del recurso
                         sem_post(&mutex_instancias_recursos);
+                    }
                     respuesta_cpu = CONTINUAR;
                     buffer_destroy(buffer_wait);
                 break;
@@ -898,22 +900,24 @@ void liberar_recursos(t_pcb* proceso_exit){
             for (int j = 0; j < instancias_utilizadas; j++){ // recorro según la cantidad de instancias que tenía el proceso asociadas por recurso
                 // 1. Libero instancia desde instancias_recursos
                 sem_wait(&mutex_instancias_recursos);
-                sprintf(instancias_recursos[i], "%d", (atoi(instancias_recursos[i]) + 1));
 
                 // 2. Consulto si existe un proceso que se bloqueó para este recurso
                 if(!queue_is_empty(cola_recursos_bloqueados[i])){
                     // 3. desbloqueo en dicho caso (todo lo demás se maneja dentro de la ejecución de dicho proceso)
                     t_pcb* proceso_desbloqueado = queue_pop(cola_recursos_bloqueados[i]);
+                    ++proceso_desbloqueado->recursos[i];
                     sem_post(&mutex_instancias_recursos);
                     proceso_desbloqueado->estado = READY; // Siempre es READY (no READY+) porque VRR sólo prioriza I/O Bound (no procesos bloqueados por un recurso)
                     mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
                     log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
                     sem_post(&orden_planificacion); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
-                } else
+                } else {
+                    sprintf(instancias_recursos[i], "%d", (atoi(instancias_recursos[i]) + 1));
                     sem_post(&mutex_instancias_recursos);
+                }
 
                 // 3. Resto una instancia dentro de los recursos del proceso actual
-                --proceso_exit->recursos[i];
+                if(proceso_exit->recursos[i] > 0) --proceso_exit->recursos[i];
             }
         }
     }
