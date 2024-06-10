@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include "main.h"
+#include "paginacion.c"
 
 config_struct config;
 pthread_t thread_memoria;
@@ -134,80 +135,7 @@ void *atender_cliente(void *cliente)
     }
 }
 
-void init_memoria(){
-    memoria = malloc(config.tam_memoria);
 
-    if(!memoria){
-        //hacer algo???
-        log_error(logger, "error al inicializar la memoria de usuario :( ");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void init_paginacion(){
-    init_memoria(); //esto va aca?????
-    init_lista_tablas();
-    init_bitmap_frames();
-    // iniciar algoritmo del tcb
-}
-
-void init_lista_tablas(){
-    lista_tablas = malloc(t_lista_tablas);
-
-    if(!lista_tablas){
-        //hacer algo???
-        log_error(logger, "error al inicializar la lista de tablas de paginas :( ");
-        exit(EXIT_FAILURE);
-    }
-}
-
-void init_bitmap_frames(){
-    frames_libres = list_create();
-
-    if (!frames_libres) {
-        //hacer algo???
-        log_error(logger, "error al inicializar el bitmap de frames libres :(");
-        exit(EXIT_FAILURE);
-    }
-
-    cant_frames = config.tam_memoria/config.tam_pagina;
-
-    for(int i=cant_frames, i>0, i--){
-        t_frame* frame = malloc(sizeof(t_frame));
-        frame->pid = -1;
-        frame->pagina = -1;
-        list_add(frames_libre, frame);
-    }
-}
-
-void free_lista_tablas(){
-    for(int i = lista_tablas.cant_tablas, i>0, i--){
-        free_tabla_paginas(lista_tablas.tabla_paginas[i]);
-    }
-}
-
-void free_tabla_paginas(t_tabla_paginas tabla_paginas){
-    for (int i = 0; tabla->paginas[i] != NULL; i++){
-        free_pagina(tabla->paginas[i]);
-    }
-}
-
-void free_pagina(t_pagina pagina){
-    free(pagina);
-}
-
-t_pagina new_pagina();
-t_tabla_paginas new_tabla_paginas();
-bool pagina_valida(t_pagina);
-bool pagina_presente(t_pagina pagina){ //esto esta bien escrito???!
-    if(pagina.presence){
-        return TRUE;
-    }
-    else{return FALSE}
-}
-
-int consulta_marco(t_pagina);
-int buscar_marco_libre();
 
 void aplicar_retardo(){
     sleep(config.retardo_respuesta);    // asi nomas???
