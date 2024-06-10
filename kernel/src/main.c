@@ -437,7 +437,7 @@ void iniciar_proceso(char *path){
     t_pcb *proceso = malloc(sizeof(t_pcb));
 
     proceso->estado = NEW;
-    proceso->quantum = config.quantum;
+    proceso->quantum = (config.quantum / 1000);
     proceso->program_counter = 0;
     proceso->pid = pid;
     proceso->desalojo = SIN_DESALOJAR;
@@ -473,7 +473,7 @@ t_pcb* extraer_proceso(uint32_t pid_proceso, e_estado_proceso estado) {
             monitor = monitor_RUNNING;
             break;
         case BLOCKED:
-            monitor = monitor_BLOCKED;
+            monitor = monitor_BLOCKED; // TODO: SACAR PROCESO DE COLA DE BLOQUEADOS DE DONDE ESTÉ Y AGREGAR EL PROCESO A MONITOR_BLOCKED CUANDO SE BLOQUEA!!!
             break;
         case EXIT:
             monitor = monitor_EXIT;
@@ -564,12 +564,12 @@ void* control_quantum(void* argumentos){
         //sleep(1);
         sleep_half_second();
         if(args->proceso_running->estado != RUNNING || (args->proceso_running->estado == RUNNING && args->proceso_running->desalojo != SIN_DESALOJAR )){
-            // TODO: en caso de VRR aca se tendría que consultar si el desalojo fue por algún bloqueo de IO (en ese caso sí se lo guarda en el READY+ de VRR con el quantum restante)
-
-            // if(strcmp(args->algoritmo, "VRR") == 0  /* && consultar si el desalojo fue por IO*/){
-            //     primer_elemento->quantum = i;
-            //     mqueue_push(monitor_READY_VRR, primer_elemento);
-            // }
+            // en caso de VRR consultar si el desalojo fue por algún bloqueo de IO (en este caso sí correspondería guardarlo en READY+ de VRR con el quantum restante)
+            // TODO: el ingreso a la cola de VRR se hace desde cada desalojo exitoso de IO en caso de algoritmo VRR!!!! mqueue_push(monitor_READY_VRR, proceso_desalojado_de_io_exitosamente);
+            if(strcmp(args->algoritmo, "VRR") == 0  && args->proceso_running->desalojo == DESALOJADO_POR_IO){
+                args->proceso_running->quantum = i; // acá solo se guarda el quantum restante! SE lo agrega al proceso en READY_VRR cuando este proceso esté desbloqueado!!
+                // CON EL MUTEX_ALGORITMO_PLANIFICACION GARANTIZAMOS QUE ESTO SE REALICE ANTES DE QUE CUALQUIER OTRO PROCESO PASE A RUNNING Y SE COMIENCE A CONTAR SU QUANTUM!!
+            }
            log_debug(logger, "proceso %u desalojado antes del fin de quantum", args->proceso_running->pid);
            free(args);
            sem_post(&mutex_algoritmo_planificacion); // libera para que el próximo proceso en READY se pueda mandar ejecutar sin condiciones de carrera!
@@ -623,11 +623,17 @@ void enviar_proceso_a_cpu(){
 
 // -------- RECIBIR PROCESO DESALOJADO Y MANEJAR SU MOTIVOS DE DESALOJO
 void recibir_proceso_desalojado(){
+    // 1. Espera mensaje de desalojo desde CPU DISPATCH
     int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
     
+    // 2. Carga buffer y consulta si es instrucción IO o no (0: no; 1: si)
+    t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
+    uint8_t aviso_instruccion_io = buffer_read_uint8(buffer_desalojo);
+
+    // 3. Carga motivo de desalojo!
     t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
     sem_wait(&cambio_estado_desalojo);
-    proceso_desalojado->desalojo = DESALOJADO;
+    proceso_desalojado->desalojo = (aviso_instruccion_io == 1) ? DESALOJADO_POR_IO : DESALOJADO;
     sem_post(&cambio_estado_desalojo);
 
     // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
@@ -649,8 +655,7 @@ void recibir_proceso_desalojado(){
         case EXIT_PROCESO:
         case FINALIZAR_PROCESO:
             log_debug(logger, "se termino de ejecutar proceso");
-            t_sbuffer *buffer_exit = cargar_buffer(conexion_cpu_dispatch);
-            recupera_contexto_proceso(buffer_exit); // carga registros en el PCB del proceso en ejecución
+            recupera_contexto_proceso(buffer_desalojo); // carga registros en el PCB del proceso en ejecución
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
             if(mensaje_desalojo == EXIT_PROCESO)
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "SUCCESS");
@@ -660,22 +665,22 @@ void recibir_proceso_desalojado(){
             sem_post(&orden_proceso_exit);
         break;
 
+
+        // WAIT RA 
         case WAIT_RECURSO:
         case SIGNAL_RECURSO:
-            // 1. carga (1. paso en la mayoría de los mensajes de desalojo )
-            t_sbuffer *buffer_wait = cargar_buffer(conexion_cpu_dispatch);
 
-            // 2. lee únicamente el nombre del recurso que pide utilizar la CPU 
+            // 1. lee únicamente el nombre del recurso que pide utilizar la CPU 
             uint32_t length;
-            char* recurso_solicitado = buffer_read_string(buffer_wait, &length);
+            char* recurso_solicitado = buffer_read_string(buffer_desalojo, &length);
             recurso_solicitado[strcspn(recurso_solicitado, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
             char *mensaje = (char *)malloc(256);
             sprintf(mensaje, "recibimos en WAIT/SIGNAL recurso %s", recurso_solicitado);
             log_debug(logger, "%s", mensaje);
             free(mensaje);
 
-            // 3. validación y uso del recurso
-            // 3.1 Lo busca en el array de RECURSOS
+            // 2. validación y uso del recurso
+            // 2.1 Lo busca en el array de RECURSOS
             int posicion_recurso = -1;
             for (int i = 0; i < cantidad_recursos; i++){
                if(strcmp(recurso_solicitado, config.recursos[i]) == 0){
@@ -686,7 +691,7 @@ void recibir_proceso_desalojado(){
             op_code respuesta_cpu;
             // A) NO existe el nombre del recurso: mandar a EXIT actualizando PCB
             if(posicion_recurso == -1){
-                recupera_contexto_proceso(buffer_wait); // actualizo PCB
+                recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
                 sem_post(&orden_proceso_exit);
@@ -698,11 +703,13 @@ void recibir_proceso_desalojado(){
                     sem_wait(&mutex_instancias_recursos);
                     if(atoi(instancias_recursos[posicion_recurso]) == 0){
                         // B) (WAIT) NO ESTA DISPONIBLE => se bloquea
-                        recupera_contexto_proceso(buffer_wait); // actualizo PCB
+                        recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                         proceso_desalojado->estado = BLOCKED;
                         queue_push(cola_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
+                        // queue_push(monitor_BLOCKED, proceso_desalojado);
+                        // proceso_desalojado->cola_bloqueado = cola_recursos_bloqueados[posicion_recurso]; // TODO: SIMON HACER ALGO ASÍ PARA INTERFACES!!
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
-                        log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BOCKED");
+                        log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BLOCKED");
                         log_bloqueo_proceso(logger,proceso_desalojado->pid, recurso_solicitado);
                         respuesta_cpu = DESALOJAR;
                     } else {
@@ -711,7 +718,7 @@ void recibir_proceso_desalojado(){
                         sem_post(&mutex_instancias_recursos);
                         ++proceso_desalojado->recursos[posicion_recurso]; // agrega una instancia a los recursos del proceso en su PCB
                         respuesta_cpu = CONTINUAR;
-                        buffer_destroy(buffer_wait);
+                        buffer_destroy(buffer_desalojo);
                     }
                 break;
                 case SIGNAL_RECURSO:
@@ -733,12 +740,12 @@ void recibir_proceso_desalojado(){
                         sem_post(&mutex_instancias_recursos);
                     }
                     respuesta_cpu = CONTINUAR;
-                    buffer_destroy(buffer_wait);
+                    buffer_destroy(buffer_desalojo);
                 break;
                 }
             }
 
-            // 4. respuesta a CPU
+            // 3. respuesta a CPU
             ssize_t bytes_enviados = send(conexion_cpu_dispatch, &respuesta_cpu, sizeof(respuesta_cpu), 0);
             if (bytes_enviados == -1) {
                 perror("Error enviando el dato");
@@ -754,7 +761,6 @@ void recibir_proceso_desalojado(){
             
         break;
         case FIN_QUANTUM:
-            t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
             recupera_contexto_proceso(buffer_desalojo);
             proceso_desalojado->estado = READY;
             mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
@@ -765,13 +771,12 @@ void recibir_proceso_desalojado(){
         break;
         
         case IO_GEN_SLEEP:
-            t_sbuffer *buffer_gen_sleep = cargar_buffer(conexion_cpu_dispatch);
-
             uint32_t length_io;
-            char* interfaz_solicitada = buffer_read_string(buffer_gen_sleep, &length_io);
+            char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io);
             interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
-            uint32_t tiempo = buffer_read_uint32(buffer_gen_sleep);
-            recupera_contexto_proceso(buffer_gen_sleep); // guarda contexto en PCB
+            uint32_t tiempo = buffer_read_uint32(buffer_desalojo);
+            recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB
+            
             char *mensaje_io = (char *)malloc(256);
             sprintf(mensaje_io, "recibimos en IN_GEN_SLEEP interfaz %s", interfaz_solicitada);
             log_debug(logger, "%s", mensaje_io);
@@ -780,10 +785,10 @@ void recibir_proceso_desalojado(){
             // TODO: revisar si el nombre de la interfaz existe en la lista que corresponda => 1. si no existe EXIT, y sino avanzar
             /*
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
-            log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
+            log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
             sem_post(&orden_proceso_exit);
             */
-            // TODO: si el tipo de interfaz es de tipo GENERICA => 1. si no es: EXIT, desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
+            // TODO: si el tipo de interfaz es de tipo GENERICA => 1. si no es: EXIT (lo mismo de arriba), desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
 
             // Respuesta a CPU
             op_code respuesta_cpu_io = DESALOJAR;
@@ -961,6 +966,11 @@ void* atender_cliente(void* cliente){
 			break;
         case IO_GEN_SLEEP:
             // TODO: la interfaz devuelve el proceso luego de ejecutar la instruccion IO_GEN_SLEEP y necesitas: desbloquear proceso actual y mandarlo a READY y además si hay un proceso bloqueado en la cola de esta interfaz, lo envías a la interfaz (hacer parecido lo mismo que hicimos en recibir_proceso_desalojado)
+
+            // sólo si la interfaz no devolvió ERROR!!!! y una vez desbloqueado el proceso (se saca de la cola de bloqueados de la interfaz!)
+            // la idea es que se ejecute la siguiente función que se encarga de mandar proceso a READY según algoritmo!
+            // proceso_IO_to_READY(/*t_pcb* proceso*/);
+            
         break;
         case RECIBI_INTERFAZ:   
             // cargar_buffer

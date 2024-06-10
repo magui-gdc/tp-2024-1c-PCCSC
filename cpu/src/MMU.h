@@ -14,3 +14,7 @@ typedef struct {
     int pagina;
     int marco;
 }t_tlb;
+
+
+void solicitar_frame_a_memoria();
+int buscar_en_tlb (int);

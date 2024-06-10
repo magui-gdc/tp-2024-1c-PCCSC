@@ -18,6 +18,7 @@ typedef enum {
 typedef enum{
     SIN_DESALOJAR,
     DESALOJADO,
+    DESALOJADO_POR_IO, 
     PEDIDO_FINALIZACION
 } cod_desalojo; 
 // FINALIZAR_PROCESO ya está en op_code que es la estructura que se carga en el t_pic de cpu (para que CPU y KERNEL compartan mismos códigos de operación)
@@ -27,7 +28,7 @@ typedef struct {
     char* tipo_interfaz;
     int socket_interfaz;
     int disponibilidad; // 0: si esta libre; 1: si está siendo usado por otro proceso
-    t_mqueue* cola_bloqueados;
+    t_queue* cola_bloqueados;
 } t_interfaz;
 
 typedef struct{
@@ -60,6 +61,7 @@ typedef struct {
     /*SIN_DESALOJAR: está en CPU cuando el estado es RUNNING, 
     DESALOJADO: volvió de CPU y todavía no se trató su mensaje de desalojo, 
     PEDIDO_FINALIZACION: se ejecutó finaliza_proceso desde consola*/
+    t_queue* cola_bloqueado; // guardas un puntero de la cola de bloqueados donde está el proceso en estado BLOCKED
 } t_pcb; // PCB
 
 typedef struct {

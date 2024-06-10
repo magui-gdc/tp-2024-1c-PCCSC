@@ -23,6 +23,9 @@ void agregar_frame_a_tlb(){
     //if tlb llena -> algoritmo de reemplazo
 }
 
+void solicitar_frame_a_memoria() {
+    
+}
 
 
 int buscar_en_tlb(int pagina){
