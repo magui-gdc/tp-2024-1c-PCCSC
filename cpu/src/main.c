@@ -5,6 +5,7 @@
 #include "main.h"
 #include "instrucciones.h"
 
+t_list* tlb_list;
 
 config_struct config;
 t_registros_cpu registros; 
@@ -22,6 +23,8 @@ int main(int argc, char* argv[]) {
     t_config* archivo_config = iniciar_config("cpu.config");    
     cargar_config_struct_CPU(archivo_config);
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
+
+    tlb_list = list_create();
 
     list_interrupciones = list_create();
     sem_init(&mutex_lista_interrupciones, 0, 1);
@@ -287,7 +290,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
                 break;
             }
-        } else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
+        }
+        ///////////////////////////// INSTRUCCIONES DE IO ///////////////////////////// 
+        else if (strcmp(comando, "IO_GEN_SLEEP") == 0){
             char* nombre_interfaz = tokens[1];
             uint32_t tiempo_sleep = (uint32_t)atoi(tokens[2]);
             //io_gen_sleep(nombre_interfaz, tiempo_sleep);
@@ -299,8 +304,204 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             );
 
             buffer_add_string(buffer_interfaz_gen_sleep, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_uint32(buffer_interfaz_gen_sleep,tiempo_sleep);
+            buffer_add_uint32(buffer_interfaz_gen_sleep, tiempo_sleep);
             desalojo_proceso(&buffer_interfaz_gen_sleep, conexion_kernel, IO_GEN_SLEEP); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_STDIN_READ") == 0){
+            char* nombre_interfaz = tokens[1];
+            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
+            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            //io_stdin_read(nombre_interfaz, registro_direccion, registro_tamaño);
+            t_sbuffer *buffer_interfaz_stdin_read = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
+                sizeof(uint32_t) * 2 // REGISTROS PARA IO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_stdin_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_uint32(buffer_interfaz_stdin_read, reg_d);
+            buffer_add_uint32(buffer_interfaz_stdin_read, reg_t);
+            desalojo_proceso(&buffer_interfaz_stdin_read, conexion_kernel, IO_STDIN_READ); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_STDOUT_WRITE") == 0){
+            char* nombre_interfaz = tokens[1];
+            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
+            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            //io_stdout_write(nombre_interfaz, registro_direccion, registro_tamaño);
+            t_sbuffer *buffer_interfaz_stdout_write = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
+                sizeof(uint32_t) * 2 // REGISTROS PARA IO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_stdout_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_uint32(buffer_interfaz_stdout_write, reg_d);
+            buffer_add_uint32(buffer_interfaz_stdout_write, reg_t);
+            desalojo_proceso(&buffer_interfaz_stdout_write, conexion_kernel, IO_STDOUT_WRITE); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_FS_CREATE") == 0){
+            char* nombre_interfaz = tokens[1];
+            char* nombre_file = tokens[2];
+            //io_fs_create(nombre_interfaz, nombre_archivo);
+            t_sbuffer *buffer_interfaz_fs_create = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
+                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_file), nombre_file;
+            desalojo_proceso(&buffer_interfaz_fs_create, conexion_kernel, IO_FS_CREATE); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_FS_DELETE") == 0){
+            char* nombre_interfaz = tokens[1];
+            char* nombre_file = tokens[2];
+            //io_fs_delete(nombre_interfaz, nombre_archivo);
+            t_sbuffer *buffer_interfaz_fs_delete = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
+                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_file), nombre_file;
+            desalojo_proceso(&buffer_interfaz_fs_delete, conexion_kernel, IO_FS_DELETE); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_FS_TRUNCATE") == 0){
+            char* nombre_interfaz = tokens[1];
+            char* nombre_file = tokens[2];
+            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            //io_fs_truncate(nombre_interfaz, nombre_archivo, registro tamaño);
+            t_sbuffer *buffer_interfaz_fs_truncate = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
+                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) // REGISTRO PARA IO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_fs_truncate, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_truncate, (uint32_t)strlen(nombre_file), nombre_file;
+            buffer_add_uint32(buffer_interfaz_fs_truncate, reg_t);
+            desalojo_proceso(&buffer_interfaz_fs_truncate, conexion_kernel, IO_FS_TRUNCATE); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_FS_WRITE") == 0){
+            char* nombre_interfaz = tokens[1];
+            char* nombre_file = tokens[2];
+            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
+            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
+            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
+            //io_fs_write(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
+            t_sbuffer *buffer_interfaz_fs_write = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
+                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) * 3 // REGISTRO PARA IO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_file), nombre_file;
+            buffer_add_uint32(buffer_interfaz_fs_write, reg_d);
+            buffer_add_uint32(buffer_interfaz_fs_write, reg_t);
+            buffer_add_uint32(buffer_interfaz_fs_write, reg_p);
+            desalojo_proceso(&buffer_interfaz_fs_write, conexion_kernel, IO_FS_WRITE); // agrega ctx en el buffer y envía paquete a kernel
+
+            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
+            switch (respuesta){
+            case DESALOJAR:
+                seguir_ejecucion = 0;
+                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+                break;
+            default:
+                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
+                break;
+            }
+        } else if (strcmp(comando, "IO_FS_READ") == 0){
+            char* nombre_interfaz = tokens[1];
+            char* nombre_file = tokens[2];
+            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
+            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
+            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
+            //io_fs_read(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
+            t_sbuffer *buffer_interfaz_fs_read = buffer_create(
+                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
+                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) * 3 // REGISTRO PARA IO
+                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+            );
+
+            buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_file), nombre_file;
+            buffer_add_uint32(buffer_interfaz_fs_read, reg_d);
+            buffer_add_uint32(buffer_interfaz_fs_read, reg_t);
+            buffer_add_uint32(buffer_interfaz_fs_read, reg_p);
+            desalojo_proceso(&buffer_interfaz_fs_read, conexion_kernel, IO_FS_READ); // agrega ctx en el buffer y envía paquete a kernel
 
             int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
             switch (respuesta){
