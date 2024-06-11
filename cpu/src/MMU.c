@@ -1,13 +1,14 @@
 #include "MMU.h"
 
-extern t_list* lista_TLB;
+extern t_list* lista_TLB; // tamanio TAM_MEMORIA/TAM_PAGINA
+extern int TAM_MEMORIA;
+extern int TAM_PAGINA;
+
 //TODO: DEFINIR CUANDO SE EJECUTA MMU. CON ESTO, VOY A SABER CUANDO SE DEVUELVE LA RESPUESTA DE MEMORIA DEL FRAME BUSCADO.
-void traducir_dlogica_a_dfisica(void* direccion_logica, t_config* archivo_config){
+void traducir_dlogica_a_dfisica(void* direccion_logica, int conexion_memoria){
     //PEDIR TAMANIO PAGINA A MEMORIA, se hace antes de llamar a la traduccion, o se hace apenas empezar?
-    //int numero_pagina = floor(direccion_logica / tamanio_pagina);
-    int numero_pagina;
-    int desplazamiento;
-    //int desplazamiento = direccion_logica - numero_pagina * tamanio_pagina;
+    int numero_pagina = floor(direccion_logica / TAM_PAGINA);
+    int desplazamiento = direccion_logica - numero_pagina * TAM_MEMORIA;
 
 
     if(buscar_en_tlb(numero_pagina) != 0){
@@ -15,8 +16,22 @@ void traducir_dlogica_a_dfisica(void* direccion_logica, t_config* archivo_config
         //return nroMarco * tamaño_pagina + desplazamiento
     } else {
         //TLB_MISS
-        solicitar_frame_a_memoria();
+        solicitar_frame_a_memoria(numero_pagina);
+        int respuesta = recibir_operacion(conexion_memoria);
+        if (respuesta == FRAME_SOLICIDATO){
+            //aniadir marco a tlb
+            //return nroMarco * tamaño_pagina + desplazamiento
+        } else {
+            //INTERRUPCION PAGE FAULT
+        }
     }
+}
+
+int solicitar_frame_a_memoria(int numero_pagina, int conexion_memoria){
+    t_sbuffer* buffer_pagina = buffer_create(sizeof(int));
+    crear_paquete(conexion_memoria, PEDIR_FRAME ,buffer_pagina);
+    //TODO: RECIBIR POR PARTE DE MEMORIA, tengo que hacer merge con magui asi arrancamos en la misma rama
+    return 0;
 }
 
 void agregar_frame_a_tlb(){

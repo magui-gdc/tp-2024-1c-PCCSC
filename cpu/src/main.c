@@ -6,6 +6,8 @@
 #include "instrucciones.h"
 
 t_list* tlb_list;
+int TAM_MEMORIA;
+int TAM_PAGINA;
 
 config_struct config;
 t_registros_cpu registros; 
@@ -43,7 +45,10 @@ int main(int argc, char* argv[]) {
     log_info(logger, config.puerto_escucha_dispatch);
     log_info(logger, "Server CPU DISPATCH");
 
-
+    t_sbuffer *buffer_memoria = cargar_buffer(conexion_memoria);
+    TAM_MEMORIA = buffer_read_int(buffer_memoria);
+    TAM_PAGINA  = buffer_read_int(buffer_memoria);
+    
     // conexion interrupt
     int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
     log_info(logger, config.puerto_escucha_interrupt);
