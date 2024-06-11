@@ -20,9 +20,7 @@ typedef struct {
 
 extern config_struct config;
 extern void* memoria;   //el "espacio de usario", la "memoria real"
-extern t_lista_tablas lista_tablas;
-extern t_frame** frames_libres; //"bitmap" de frames libres 
-extern int cant_frames = 0;
+
 
 void cargar_config_struct_MEMORIA(t_config*);
 
