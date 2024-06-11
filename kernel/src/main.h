@@ -58,10 +58,12 @@ typedef struct {
     char path[256];
     int* recursos; // array que guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando
     cod_desalojo desalojo; 
-    /*SIN_DESALOJAR: está en CPU cuando el estado es RUNNING, 
-    DESALOJADO: volvió de CPU y todavía no se trató su mensaje de desalojo, 
+    /*
+    SIN_DESALOJAR: está en CPU cuando el estado es RUNNING, 
+    DESALOJADO: volvió de CPU ,
+    DESALOJADO_POR_IO: volvió de CPU por ejecutar una INST de IO,
     PEDIDO_FINALIZACION: se ejecutó finaliza_proceso desde consola*/
-    t_queue* cola_bloqueado; // guardas un puntero de la cola de bloqueados donde está el proceso en estado BLOCKED
+    t_mqueue* cola_bloqueado; // guardas un puntero de la cola de bloqueados donde está el proceso en estado BLOCKED
 } t_pcb; // PCB
 
 typedef struct {
@@ -95,14 +97,13 @@ void enviar_proceso_a_cpu();
 void recibir_proceso_desalojado();
 void recupera_contexto_proceso(t_sbuffer* buffer);
 t_pcb* buscar_pcb_por_pid(uint32_t);
-t_pcb* extraer_proceso(uint32_t pid, e_estado_proceso estado);
+t_pcb* extraer_proceso(t_pcb* proceso);
 void liberar_recursos(t_pcb* proceso_exit);
 void liberar_proceso_en_memoria(uint32_t pid_proceso);
 void enviar_interrupcion_a_cpu(t_pic interrupcion);
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();
-void algoritmo_fifo();
-void algoritmo_rr();
+void algoritmo_fifo_rr();
 void algoritmo_vrr();
 void* control_quantum(void*);
