@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
 
     decir_hola("una Interfaz de Entrada/Salida");
 
-     //----- recibo archivo config e inicializo el config
+     //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     t_config* arch_config = config_create(obtener_path());
     char* nombre = obtener_path(); //TODO: esto en realidad lo nombra como el path, hay que buscar una forma que dado el path tengamos el nombre del file
     t_io* interfaz_io = inicializar_io(nombre, arch_config); //TODO: free(interfaz_io)
@@ -29,13 +29,16 @@ int main(int argc, char* argv[]) {
     //enviar_conexion("Interfaz I/O", conexion_kernel);
 
    
-
+    //----- IDENTIFICO LA IO CON EL KERNEL
+    //TODO: el kernel deber verificar que la IO no exista aun para no iniciarla dos veces y meterla en una lista de IOs de su tipo
+    
     t_sbuffer* buffer_conexion = buffer_create(
-        (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) // tamanio del string
-        // + sumar todos los sizeof de los valores que le vas a pasar (tipo_interfaz, path , ...)
+        (uint32_t)strlen(interfaz_io->nombre_id) + sizeof(uint32_t) // tamanio del string
+        + (uint32_t)strlen(config.tipo_interfaz) + sizeof(uint32_t) // + sumar todos los sizeof de los valores que le vas a pasar (tipo_interfaz, path , ...)
     );
 
-    buffer_add_string(buffer_conexion, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+    buffer_add_string(buffer_conexion, (uint32_t)strlen(interfaz_io->nombre_id), interfaz_io->nombre_id);
+    buffer_add_string(buffer_conexion, (uint32_t)strlen(config.tipo_interfaz), config.tipo_interfaz)
     cargar_paquete(conexion_kernel, CONEXION, buffer_conexion);
 
     paquete(conexion_kernel);

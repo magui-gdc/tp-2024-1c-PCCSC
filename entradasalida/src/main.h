@@ -81,3 +81,13 @@ void compactar_fs(t_bitarray* bitarray);
 bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
 bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);
 char* obtener_path();
+
+// INSTRUCCIONES DE IO
+void io_gen_sleep(uint32_t work_u);
+void io_stdin_read(char* reg_d, uint32_t reg_s);
+void io_stdout_write(char* reg_d, uint32_t reg_s);
+void io_fs_create(char* arch);
+void io_fs_delete(char* arch);
+void io_fs_truncate(char* arch, uint32_t reg_s);
+void io_fs_write(char* arch, char* reg_d, uint32_t reg_s, uint32_t reg_p);
+void io_fs_read(char* arch, char* reg_d, uint32_t reg_s, uint32_t reg_p); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero

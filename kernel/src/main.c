@@ -47,8 +47,11 @@ sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_plani
 sem_t mutex_cambio_estado; // TODO: agregarlo donde corresponda (es un semáforo que controla que no se pase un proceso de una cola a otra mientras se está realizando una operación de FINALIZAR_PROCESO)
 sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (se pueedde consultar/modificar simultáneamente desde largo plazo EXIT como desdde corto plazo DESALOJO)
 
-// ---------- INTERFACES --------- //
+// ---------- INTERFACES DE IOS --------- //
 t_list* interfaces_genericas;
+t_list* interfaces_stdin;
+t_list* interfaces_stdout;
+t_list* interfaces_dialfs;
 
 int main(int argc, char *argv[])
 {
@@ -77,6 +80,9 @@ int main(int argc, char *argv[])
         monitores_recursos_bloqueados[i] = mqueue_create();
 
     interfaces_genericas = list_create();
+    interfaces_stdin = list_create();
+    interfaces_stdout = list_create();
+    interfaces_dialfs = list_create();
 
     // -- INICIALIZACION SEMAFOROS -- //
     sem_init(&mutex_planificacion_pausada, 0, 1);
@@ -158,6 +164,9 @@ int main(int argc, char *argv[])
     sem_destroy(&mutex_instancias_recursos);
 
     list_destroy(interfaces_genericas);
+    list_destroy(interfaces_stdin);
+    list_destroy(interfaces_stdout);
+    list_destroy(interfaces_dialfs);
     list_destroy(pcb_list);
 
     log_destroy(logger);
