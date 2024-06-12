@@ -42,6 +42,7 @@ typedef struct
 {
     char* nombre_id;
     t_config* archivo;
+    IO_class clase;
 } t_io;
 
 
@@ -64,7 +65,7 @@ void cargar_config_struct_IO_fs(t_config*);
 
 void paquete(int);
 
-void inicializar_io(char*, t_config*);
+t_io* inicializar_io(char*, t_config*);
 
 void selector_carga_config(t_config*);
 
@@ -79,3 +80,4 @@ void escribir_archivo(const char* nombre_archivo, int offset, int size, const ch
 void compactar_fs(t_bitarray* bitarray);
 bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
 bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);
+char* obtener_path();
