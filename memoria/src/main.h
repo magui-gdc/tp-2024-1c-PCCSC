@@ -19,8 +19,6 @@ typedef struct {
 } config_struct;
 
 extern config_struct config;
-extern void* memoria;   //el "espacio de usario", la "memoria real"
-
 
 void cargar_config_struct_MEMORIA(t_config*);
 

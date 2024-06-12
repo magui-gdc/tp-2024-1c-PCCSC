@@ -24,6 +24,7 @@ typedef struct{         // y donde van los datos ahre??????
 typedef struct{ //para el "bitmap" de frames libres 
     u_int32_t pid;
     int pagina;
+    bool presence;
 } t_frame;
 
 typedef struct{
@@ -32,12 +33,14 @@ typedef struct{
     //e_estado_proceso estado; //mm maybe?? si se usa poner el include necesario!!!
 } t_pseudo_pcb;
 
+
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
+extern void* memoria;   //el "espacio de usario", la "memoria real"
 extern t_lista_tablas lista_tablas;
-extern u_int32_t tid; //contador para el TABLE IDENTIFICATOR 
-extern t_frame** frames_libres; //"bitmap" de frames libres
-extern int cant_frames = 0; //no me acuerdo para qeu hice esto
+extern u_int32_t tid; //contador para el TABLE IDENTIFICATOR jaja
+
+extern t_frame** bitmap_frames_libres; //"bitmap" de paginas cargadas
 extern t_pseudo_pcb** lista_procesos; //lista de procesos con sus respectivas listas de paginas
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -47,9 +50,13 @@ extern t_pseudo_pcb** lista_procesos; //lista de procesos con sus respectivas li
 void init_memoria();
 void init_paginacion();
 
-t_lista_tablas* init_lista_tablas();
-t_tabla_paginas* create_tabla_paginas(u_int32_t pid);
+void init_lista_tablas(); //inicializa la lista de tablas y devuelve el puntero
 void init_bitmap_frames();
+void init_lista_procesos();
+
+int create_tabla_paginas(u_int32_t pid); //inserta nueva tabla en lista de paginas
+int create_pagina(t_list); //le mandas la lista de la pagina e inserta la nueva pagina
+int add_psuedo_pcb(u_int32_t pid, u_int32_t tid); 
 
 
 /*          MUERTE            */
@@ -60,8 +67,6 @@ void free_pagina(t_pagina);
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 //cosas SUS
-t_pagina new_pagina();
-t_tabla_paginas new_tabla_paginas(u_int32_t); //recibo el pid?
 bool pagina_valida(t_pagina); 
 bool pagina_presente(t_pagina); //consulta pagina cargada en memoria
 t_frame* consulta_marco(t_pagina); //entra pagina sale puntero al marco??

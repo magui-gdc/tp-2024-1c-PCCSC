@@ -54,7 +54,12 @@ void *atender_cliente(void *cliente)
         switch (cod_op)
         {
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
-            t_list *path_recibido = recibir_paquete(cliente_recibido);
+            t_sbuffer *buffer_path = cargar_buffer(cliente_recibido);
+
+            uint32_t pid = buffer_read_uint32(buffer_path);
+            int longitud_path = buffer_read_int(buffer_path);
+            char* path   = buffer_read_string(buffer_path, longitud_path);
+
             crear_proceso(pid, path); // de donde saco el path y el pid xd????
             log_info(logger, "CREE EL PROCESO");
             break;

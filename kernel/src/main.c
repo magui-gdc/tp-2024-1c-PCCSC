@@ -176,14 +176,19 @@ void *consola_kernel(void *archivo_config)
                 char *path = tokens[1];
                 t_paquete* paquete_proceso = crear_paquete();
                 if (strlen(path) != 0 && path != NULL){   
-                    agregar_a_paquete(paquete_proceso, path, sizeof(path));
-                    paquete_proceso->codigo_operacion = INICIAR_PROCESO;
-                    enviar_paquete(paquete_proceso, conexion_memoria);
+                    t_sbuffer* buffer_proceso_a_memoria = buffer_create(
+                        sizeof(uint32_t) // pid
+                        + sizeof(int) // longitud del path
+                        + sizeof(char) *strlen(path) // path
+                    );
+
+                    buffer_add_uint32(buffer_proceso_a_memoria, proceso->pid);
+                    buffer_add_int(buffer_proceso_a_memoria, strlen(path));
+                    buffer_add_string(buffer_proceso_a_memoria, strlen(path), path);
+
+                    cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
                     // solicitar creacion a memoria de proceso
                     // si se crea proceso, iniciar largo plazo
-
-                    iniciar_proceso(path);
-                    // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
                     printf("path ingresado (iniciar_proceso): %s\n", path);
                 }
             }
