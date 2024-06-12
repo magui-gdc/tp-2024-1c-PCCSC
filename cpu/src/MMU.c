@@ -30,7 +30,6 @@ void traducir_dlogica_a_dfisica(void* direccion_logica, int conexion_memoria){
 int solicitar_frame_a_memoria(int numero_pagina, int conexion_memoria){
     t_sbuffer* buffer_pagina = buffer_create(sizeof(int));
     crear_paquete(conexion_memoria, PEDIR_FRAME ,buffer_pagina);
-    //TODO: RECIBIR POR PARTE DE MEMORIA, tengo que hacer merge con magui asi arrancamos en la misma rama
     return 0;
 }
 

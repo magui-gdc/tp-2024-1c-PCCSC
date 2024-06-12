@@ -52,6 +52,15 @@ void *atender_cliente(void *cliente)
         int cod_op = recibir_operacion(cliente_recibido); // bloqueante
         switch (cod_op)
         {
+        case PEDIR_FRAME:
+            t_sbuffer* buffer_pagina = cargar_buffer(cliente_recibido);
+            int pagina_enviada = buffer_read_int(buffer_pagina);
+            int frame = buscar_frame(pagina_enviada);
+            if (frame == -1){
+                
+            }
+
+        break;
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
             t_list *path_recibido = recibir_paquete(cliente_recibido);
             crear_proceso(pid, path); // de donde saco el path y el pid xd????
@@ -148,9 +157,9 @@ void inicializar_memoria(){
 
 void crear_proceso(int pid, char* path){
     
-    FILE *archivo = fopen(path_instrucciones, "r");
+    FILE *archivo = fopen(path, "r");
     if (!archivo) {
-        log_error(logger, "el archivo del path '%s' no se abre :( ", path_instrucciones);
+        log_error(logger, "el archivo del path '%s' no se abre :( ", path);
         return;
     }
 
@@ -182,4 +191,8 @@ void eliminar_proceso(int pid) { //vuelvo a poner la tabla en -1!!! yay
         }
     }
     log_info(logger, "proceso %d eliminado", pid);
+}
+
+int buscar_frame(int pagina){
+    return -1;
 }
