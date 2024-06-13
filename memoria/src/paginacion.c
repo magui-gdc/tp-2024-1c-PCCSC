@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include "paginacion.h"
+#include "logs.h"
 // hay que poner include main.c y main.h???
 
 /*          NACIMIENTO            */
@@ -55,7 +56,7 @@ void init_lista_procesos(){
 
 }
 
-int create_tabla_paginas(u_int32_t pid){
+uint32_t create_tabla_paginas(uint32_t pid){
 
     t_tabla_paginas tabla_aux = malloc(sizeof(t_tabla_paginas));
     if (!tabla_aux){
@@ -74,10 +75,13 @@ int create_tabla_paginas(u_int32_t pid){
         exit(EXIT_FAILURE);
     }
 
-    return list_add(lista_tablas->tabla_paginas, tabla_aux);
+    list_add(lista_tablas->tabla_paginas, tabla_aux);
+    log_creacion_destruccion_de_tabla_de_pagina(logger, tabla_aux->pid, tabla_aux->tamanio);
+    free(tabla_aux);
+    return(tid-1);    
 }
 
-int create_pagina(t_list *tabla_paginas){
+void create_pagina(t_list *tabla_paginas){
 
     t_pagina *pagina_aux = malloc(sizeof(t_pagina));
     if (!pagina_aux){
@@ -95,6 +99,110 @@ int create_pagina(t_list *tabla_paginas){
     }
 
     tabla_paginas->cant_paginas++;
+    
+    list_add(tabla_paginas, pagina_aux);
+    free(pagina_aux);
+}
 
-    return list_add(tabla_paginas, pagina_aux);
+void add_psuedo_pcb(uint32_t pid, uint32_t tid){
+
+    t_pseudo_pcb *pcb_aux = malloc(sizeof(t_pseudo_pcb));
+    pcb_aux->pid = pid;
+    pcb_aux->tid = tid;
+
+    list_add(lista_procesos, pcb_aux);
+    free(pcb_aux);
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+/*          MUERTE            */
+
+void free_tabla_paginas(uint32_t pid){
+    uint32_t tid = get_tid(pid);
+    t_tabla_paginas* tabla = (t_tabla_paginas*)get_element_from_pid(lista_tablas, pid);
+    //semaforo wait
+    list_remove_element(lista_tablas, tabla);
+    //signal
+    remover_y_eliminar_elementos_de_lista(tabla->paginas);
+    free(tabla);
+}
+
+void remove_from_bitmap(uint32_t pid){
+    t_frame* frame = (t_frame*)get_element_from_pid(bitmap_frames_libres,pid);
+    list_remove_element(bitmap_frames_libres, frame);
+    free(frame);
+}
+void remove_from_lista_procesos(uint32_t pid){
+    t_pseudo_pcb* pseudo_pcb = (t_pseudo_pcb*)get_element_from_pid(lista_procesos, pid);
+    list_remove_element(lista_procesos, pseudo_pcb);
+    free(pseudo_pcb);
+    
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+/*          AUXILIARES            */
+
+uint32_t get_tid(uint32_t pid){
+    bool comparar_pid(void *elemento){
+        t_tabla_paginas *tabla = (t_tabla_paginas *)elemento;
+        return tabla->pid == pid;
+    }
+    t_tabla_paginas* tabla_encontrada = (t_tabla_paginas*)list_find(lista_tablas, comparar_pid);
+
+    return tabla_encontrada->tid; // si no funciona pasarlo como puntero a funcion
+}
+
+void* get_element_from_pid(t_list* lista, uint32_t pid_buscado){ //ABSTRACCION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    bool comparar_pid(void *elemento){
+        void *frame = (void *)elemento;
+        return elemento->pid == pid_buscado;
+    }
+    void* elemento = (void*)list_find(lista, comparar_pid);
+
+    return elemento; // si no funciona pasarlo como puntero a funcion
+}
+
+/*
+t_tabla_paginas* get_tabla_from_tid(uint32_t tid){
+    bool comparar_tid(void *elemento){
+        t_tabla_paginas *tabla = (t_tabla_paginas *)elemento;
+        return tabla->tid == tid;
+    }
+    t_tabla_paginas* tabla_encontrada = (t_tabla_paginas*)list_find(lista_tablas, comparar_tid);
+
+    return tabla_encontrada; // si no funciona pasarlo como puntero a funcion
+}
+t_frame* get_frame_bitmap_from_pid(uint32_t pid_buscado){
+
+    bool comparar_pid(void *elemento){
+        t_frame *frame = (t_frame *)elemento;
+        return frame->pid == pid_buscado;
+    }
+    t_frame* frame_encontrado = (t_frame*)list_find(bitmap_frames_libres, comparar_pid);
+
+    return frame_encontrado; // si no funciona pasarlo como puntero a funcion
+}
+t_pseudo_pcb* get_pseudo_pcb_from_pid(uint32_t pid_buscado){
+
+    bool comparar_pid(void *elemento){
+        t_pseudo_pcb *pcb = (t_pseudo_pcb *)elemento;
+        return pcb->pid == pid_buscado;
+    }
+    t_pseudo_pcb* pcb_encontrado = (t_pseudo_pcb*)list_find(lista_procesos, comparar_pid);
+
+    return pcb_encontrado; // si no funciona pasarlo como puntero a funcion
+}
+*/
+
+void remover_y_eliminar_elementos_de_lista(t_list* lista_original){
+    t_list_iterator* iterator = list_iterator_create(lista_original);
+    while (list_iterator_has_next(iterator)) {
+        // Obtener el siguiente elemento de la lista original
+        void* element = list_iterator_next(iterator);
+        free(element);
+    }
+    list_iterator_destroy(iterator);
 }

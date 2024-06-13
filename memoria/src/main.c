@@ -30,6 +30,8 @@ int main(int argc, char *argv[])
 
     pthread_join(thread_memoria, NULL);
 
+    init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
+
     log_destroy(logger);
     config_destroy(archivo_config);
 
@@ -61,6 +63,7 @@ void *atender_cliente(void *cliente)
             char* path   = buffer_read_string(buffer_path, longitud_path);
 
             crear_proceso(pid, path); // de donde saco el path y el pid xd????
+
             log_info(logger, "CREE EL PROCESO");
             break;
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
@@ -140,6 +143,16 @@ void *atender_cliente(void *cliente)
     }
 }
 
+void crear_proceso(uint32_t pid, char* path){
+    uint32_t tid = create_tabla_paginas(pid);
+    add_psuedo_pcb(pid, tid);
+}
+
+void eliminar_proceso(uint32_t pid){
+    free_tabla_paginas(uint32_t pid); 
+    remove_from_bitmap(uint32_t pid);  
+    remove_from_lista_procesos(uint32_t pid);
+}
 
 
 void aplicar_retardo(){
