@@ -29,8 +29,8 @@ uint32_t pid; // PID: contador para determinar el PID de cada proceso creado
 fc_puntero algoritmo_planificacion;
 t_mqueue *monitor_READY_VRR;
 pthread_t hilo_quantum; // hilo para el control de QUANTUM en caso de RR O VRR
-uint quantum_en_microsegundos; // donde se guarda el quantum a controlar en caso de RR o VRR
-uint milisegundos_transcurridos;
+useconds_t quantum_en_microsegundos; // donde se guarda el quantum a controlar en caso de RR o VRR
+int64_t  milisegundos_transcurridos;
 uint8_t corresponde_quantum;
 uint8_t corresponde_timer_vrr;
 t_temporal* timer_quantum; // para VRR: contador en milisegundos para determinar el quantum restante!!!
@@ -364,7 +364,10 @@ void *planificar_corto_plazo(void *archivo_config){
             // 3. control QUANTUM una vez que el proceso está en RUNNING!!! (sólo para RR o VRR)
             if (corresponde_quantum == 1){ 
                 t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
-                if(corresponde_timer_vrr == 1 ) timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
+                if(corresponde_timer_vrr == 1 ) {
+                    timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
+                    log_debug(logger, "estas en quantum vrr creando el timer");
+                }
                 pthread_create(&hilo_quantum, NULL, control_quantum, &(proceso_en_running->pid));
                 pthread_detach(hilo_quantum);  
             }
@@ -561,6 +564,7 @@ void algoritmo_vrr(){
 
 void* control_quantum(void* args){
     // 1. comienza a correr el quantum!
+    log_debug(logger, "cuenta los siguientes microsegundos: %u", quantum_en_microsegundos);
     usleep(quantum_en_microsegundos);
     // 2. si se acabo el quantum, manda INTERRUPCION A CPU
     t_pic interrupt = {*(uint32_t*) args, FIN_QUANTUM, 1};
@@ -606,13 +610,12 @@ void recibir_proceso_desalojado(){
     // 1. Espera mensaje de desalojo desde CPU DISPATCH
     int mensaje_desalojo = recibir_operacion(conexion_cpu_dispatch); // bloqueante, hasta que CPU devuelva algo no continúa con la ejecución de otro proceso
     
-    if(corresponde_quantum == 1) pthread_cancel(hilo_quantum); // pausa hilo del quantum (para que deje de contar el quantum en caso de no haber desalojado por fin de quantum)
-    if(corresponde_timer_vrr == 1) { // carga milisegundos transcurridos desde que se mandó a ejecutar a CPU hasta que desalojó (para VRR)
-        temporal_stop(timer_quantum);
-        milisegundos_transcurridos = temporal_gettime(timer_quantum);
-        temporal_destroy(timer_quantum);
+    //  apenas desaloja cargo ms transcurridos para VRR    
+    if(corresponde_timer_vrr == 1) {
+        milisegundos_transcurridos = temporal_gettime(timer_quantum); 
+        log_debug(logger, "ms transcurridos: %ld", milisegundos_transcurridos);
     }
-    
+
     // 2. Carga buffer y consulta si es instrucción IO o no (0: no; 1: si)
     t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
     uint8_t aviso_instruccion_io = buffer_read_uint8(buffer_desalojo);
@@ -625,9 +628,11 @@ void recibir_proceso_desalojado(){
 
     // -- cargo quantum restante si el algoritmo es VRR y si se desalojó por instruccion IO (si fuese desalojo por fin de recurso debería ir a READY comun)
     if(corresponde_timer_vrr == 1 && proceso_desalojado->desalojo == DESALOJADO_POR_IO){
+        log_debug(logger, "corresponde guardar quantum restante IO");
         if (milisegundos_transcurridos < proceso_desalojado->quantum ) 
             proceso_desalojado->quantum -= milisegundos_transcurridos;
-        else proceso_desalojado->quantum = config.quantum; // se consumió todo el QUANTUM RESTANTE: en estos casos luego de desalojar la IO debería volver a READY COMÚN
+        else 
+            proceso_desalojado->quantum = config.quantum; // se consumió todo el QUANTUM RESTANTE: en estos casos luego de desalojar la IO debería volver a READY COMÚN
     }
 
     // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
@@ -648,6 +653,7 @@ void recibir_proceso_desalojado(){
     switch (mensaje_desalojo){
         case EXIT_PROCESO:
         case FINALIZAR_PROCESO:
+            control_quantum_desalojo();
             log_debug(logger, "se termino de ejecutar proceso");
             recupera_contexto_proceso(buffer_desalojo); // carga registros en el PCB del proceso en ejecución
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
@@ -668,10 +674,8 @@ void recibir_proceso_desalojado(){
             uint32_t length;
             char* recurso_solicitado = buffer_read_string(buffer_desalojo, &length);
             recurso_solicitado[strcspn(recurso_solicitado, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
-            char *mensaje = (char *)malloc(256);
-            sprintf(mensaje, "recibimos en WAIT/SIGNAL recurso %s", recurso_solicitado);
-            log_debug(logger, "%s", mensaje);
-            free(mensaje);
+            
+            log_debug(logger, "recibimos en WAIT/SIGNAL recurso %s", recurso_solicitado);
 
             // 2. validación y uso del recurso
             // 2.1 Lo busca en el array de RECURSOS
@@ -685,6 +689,7 @@ void recibir_proceso_desalojado(){
             op_code respuesta_cpu;
             // A) NO existe el nombre del recurso: mandar a EXIT actualizando PCB
             if(posicion_recurso == -1){
+                control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
                 recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
@@ -697,6 +702,7 @@ void recibir_proceso_desalojado(){
                     sem_wait(&mutex_instancias_recursos);
                     if(atoi(instancias_recursos[posicion_recurso]) == 0){
                         // B) (WAIT) NO ESTA DISPONIBLE => se bloquea
+                        control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
                         recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                         proceso_desalojado->estado = BLOCKED;
                         mqueue_push(cola_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
@@ -755,6 +761,7 @@ void recibir_proceso_desalojado(){
             
         break;
         case FIN_QUANTUM:
+            control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
             recupera_contexto_proceso(buffer_desalojo);
             // TODO: SOLO SI LA PLANIFICACION NO ESTA PAUSADA
             proceso_desalojado->estado = READY;
@@ -768,6 +775,7 @@ void recibir_proceso_desalojado(){
         break;
         
         case IO_GEN_SLEEP:
+            control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
             uint32_t length_io;
             char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io);
             interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
@@ -808,16 +816,23 @@ void recibir_proceso_desalojado(){
     */
 }
 
+// ejecutar al ppio. para los casos donde se desaloja el proceso en actual ejecución, cualquiera sea el motivo!
+void control_quantum_desalojo(){ 
+    if(corresponde_quantum == 1) pthread_cancel(hilo_quantum); // pausa hilo del quantum (para que deje de contar el quantum en caso de no haber desalojado por fin de quantum)
+    if(corresponde_timer_vrr == 1) { // para el temporizador de vrr 
+        temporal_stop(timer_quantum);
+        temporal_destroy(timer_quantum);
+        log_debug(logger, "timmer stop, quantum contado vrr: %ld", milisegundos_transcurridos );
+    }
+}
+
 // ------- RECUPERAR CONTEXTO ANTE DESALOJO DE PROCESO DE CPU
 void recupera_contexto_proceso(t_sbuffer* buffer){
     t_pcb* proceso = mqueue_peek(monitor_RUNNING); 
     buffer_read_registros(buffer, &(proceso->registros));
     buffer_destroy(buffer);
 
-    char *mensaje = (char *)malloc(256);
-    sprintf(mensaje, "PC: %u, AX: %u, BX: %u, CX: %u, DX: %u, EAX: %u, EBX: %u, ECX: %u, EDX: %u, SI: %u, DI: %u", proceso->registros.PC, proceso->registros.AX, proceso->registros.BX, proceso->registros.CX, proceso->registros.DX, proceso->registros.EAX, proceso->registros.EBX, proceso->registros.ECX, proceso->registros.EDX, proceso->registros.SI, proceso->registros.DI );
-    log_debug(logger, "%s", mensaje);
-    free(mensaje);
+    log_debug(logger, "PC: %u, AX: %u, BX: %u, CX: %u, DX: %u, EAX: %u, EBX: %u, ECX: %u, EDX: %u, SI: %u, DI: %u", proceso->registros.PC, proceso->registros.AX, proceso->registros.BX, proceso->registros.CX, proceso->registros.DX, proceso->registros.EAX, proceso->registros.EBX, proceso->registros.ECX, proceso->registros.EDX, proceso->registros.SI, proceso->registros.DI );
 }
 // ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

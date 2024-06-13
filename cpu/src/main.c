@@ -241,6 +241,8 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // ------------------------------- ETAPA EXECUTE ---------------------------------- //
     // 3. EXECUTE: ejecutar la instrucción, actualizando su contexto.  Considerar que ciertas INSTRUCCIONES deben mandar por puerto DISPATCH a KERNEL ciertas solicitudes, como por ejemplo, WAIT-SIGNAL-ACCEDER A I/O-EXIT ..., y deberán esperar la respuesta de KERNEL para seguir avanzando
     if (comando != NULL){
+        registros.PC++; // Se suma 1 al Program Counter (por si desaloja para que desaloje con el PC actualizado!)
+
         if (strcmp(comando, "SET") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
@@ -526,8 +528,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             }
         }
         // TODO: SEGUIR
-
-        registros.PC++; // Se suma 1 al Program Counter
     }
     string_array_destroy(tokens);
 }

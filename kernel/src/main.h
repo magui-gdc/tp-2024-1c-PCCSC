@@ -107,3 +107,5 @@ fc_puntero obtener_algoritmo_planificacion();
 void algoritmo_fifo_rr();
 void algoritmo_vrr();
 void* control_quantum(void*);
+// ejecutar al ppio. para los casos donde se desaloja el proceso en actual ejecución, cualquiera sea el motivo!
+void control_quantum_desalojo();
