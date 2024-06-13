@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include "main.h"
+#include "paginacion.c"
 
 config_struct config;
 pthread_t thread_memoria;
@@ -53,10 +54,19 @@ void *atender_cliente(void *cliente)
         switch (cod_op)
         {
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
-            //t_list *path_recibido = recibir_paquete(cliente_recibido);
-            log_info(logger, "CREE EL PROCESO");
+            t_sbuffer *buffer_path = cargar_buffer(cliente_recibido);
+
+            uint32_t pid = buffer_read_uint32(buffer_path);
+            uint32_t longitud_path;
+            char* path  = buffer_read_string(buffer_path, &longitud_path);
+            path[strcspn(path, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
+
+            // crear_proceso(pid, path); // de donde saco el path y el pid xd????
+            lof_debug(logger, "CREE EL PROCESO");
+            // TODO: DEVUELVE A KERNEL MENSAJE EXITOSO EN CASO DE QUE SE HAYA CREADO CORRECTAMENTE EL PROCESO 
             break;
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
+            eliminar_proceso(pid); // falta q obtenga el pid xd
             break;
         case LEER_PROCESO:
             // guarda BUFFER del paquete enviado
@@ -128,4 +138,10 @@ void *atender_cliente(void *cliente)
             break;
         }
     }
+}
+
+
+
+void aplicar_retardo(){
+    sleep(config.retardo_respuesta);    // asi nomas???
 }

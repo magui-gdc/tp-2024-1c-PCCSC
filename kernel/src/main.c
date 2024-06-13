@@ -217,14 +217,8 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
         } // INICIAR_PROCESO /carpetaProcesos/proceso1
         else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
             char *path = tokens[1];
-            t_paquete* paquete_proceso = crear_paquete();
-            if (strlen(path) != 0 && path != NULL){   
-                agregar_a_paquete(paquete_proceso, path, sizeof(path));
-                paquete_proceso->codigo_operacion = INICIAR_PROCESO;
-                enviar_paquete(paquete_proceso, conexion_memoria);
-                // solicitar creacion a memoria de proceso
-                // si se crea proceso, iniciar largo plazo
-
+            if (strlen(path) != 0 && path != NULL){  
+                // EN REALIDAD KERNEL MANDA A CREAR AL PROCESO EN MEMORIA CUANDO TOMA UN GRADO DE MULTIPROGRAMACIÓN PARA DICHO PROCESO (agrego buffer en largo plazo)
                 iniciar_proceso(path);
                 // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
                 printf("path ingresado (iniciar_proceso): %s\n", path);
@@ -432,7 +426,6 @@ void inicializar_registros(t_pcb* proceso) {
     proceso->registros.DI = 0;
 }
 
-// esto debería ir en memoria, y se ejecuta despues de verificar que el path existe.
 void iniciar_proceso(char *path){
 
     t_pcb *proceso = malloc(sizeof(t_pcb));
@@ -846,14 +839,27 @@ void *planificar_new_to_ready(void *archivo_config)
             sem_post(&mutex_planificacion_pausada);
             if (!mqueue_is_empty(monitor_NEW)){
                 sem_wait(&contador_grado_multiprogramacion);
+
                 t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+
+                t_sbuffer* buffer_proceso_a_memoria = buffer_create(
+                    sizeof(uint32_t) // pid 
+                    + (uint32_t)strlen(primer_elemento->path) + sizeof(uint32_t) // longitud del string más longitud en sí
+                );
+
+                buffer_add_uint32(buffer_proceso_a_memoria, primer_elemento->pid);
+                buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
+
+                cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
+                // TODO: ACÁ MEMORIA DEBERÍA DEVOLVER ALGO PARA SABER SI SE CREÓ OK!!!!!!!!
+
                 primer_elemento->estado = READY;
                 mqueue_push(monitor_READY, primer_elemento);
+
                 log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
-                log_ingreso_ready(logger, monitor_READY);// esto seria el ingreso a ready que decis???
-                // TODO: ingreso a READYs, 
-                log_debug(logger, "estas en largo plazoo");
-                sem_post(&orden_planificacion);
+                log_ingreso_ready(logger, monitor_READY);
+
+                sem_post(&orden_planificacion); // envia orden de procesamiento a corto plazo
             }
         }
         else
