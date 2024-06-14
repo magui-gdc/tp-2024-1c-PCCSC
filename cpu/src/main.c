@@ -574,11 +574,7 @@ void* recibir_interrupcion(void* conexion){
                 sem_wait(&mutex_lista_interrupciones);
                 list_add(list_interrupciones, interrupcion_recibida);
                 sem_post(&mutex_lista_interrupciones);
-                // a modo de log: CAMBIAR DESPUÉS
-                char* mensaje = (char*)malloc(128);
-                sprintf(mensaje, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
-                log_debug(logger, "%s", mensaje);
-                free(mensaje);
+                log_debug(logger, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
             }
             break;
         case -1:

@@ -36,7 +36,7 @@ uint8_t corresponde_timer_vrr;
 t_temporal* timer_quantum; // para VRR: contador en milisegundos para determinar el quantum restante!!!
 
 // ---------- FLAGS ---------- //
-uint8_t PLANIFICACION_PAUSADA;
+uint8_t PLANIFICACION_PAUSADA; // 0: largo plazo NEW; 1: corto plazo + desalojo 2: mediano plazo (blocked->ready); 3: largo plazo EXIT
 
 // ---------- RECURSOS - BLOQUEO ---------- //
 int cantidad_recursos; // cantidad total de recursos grabados en el archivo de configuracion
@@ -45,7 +45,7 @@ t_mqueue** cola_recursos_bloqueados; // para cada recurso del archivo configurac
 sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (se pueedde consultar/modificar simultáneamente desde largo plazo EXIT como desdde corto plazo DESALOJO)
 
 // ---------- SEMAFOROS ---------- //
-sem_t mutex_planificacion_pausada, contador_grado_multiprogramacion, orden_planificacion, orden_proceso_exit, cambio_estado_desalojo;
+sem_t mutex_planificacion_pausada[4], contador_grado_multiprogramacion, orden_planificacion_corto_plazo, orden_planificacion_largo_plazo, orden_proceso_exit, cambio_estado_desalojo;
 
 // ---------- INTERFACES --------- //
 t_list* interfaces_genericas;
@@ -80,8 +80,9 @@ int main(int argc, char *argv[])
     quantum_en_microsegundos = config.quantum * 1000; // para RR
 
     // -- INICIALIZACION SEMAFOROS -- //
-    sem_init(&mutex_planificacion_pausada, 0, 1);
-    sem_init(&orden_planificacion, 0, 0);
+    for(int j = 0; j < 4; j++) sem_init(&mutex_planificacion_pausada[j], 0, 1);
+    sem_init(&orden_planificacion_corto_plazo, 0, 0);
+    sem_init(&orden_planificacion_largo_plazo, 0, 0);
     sem_init(&contador_grado_multiprogramacion, 0, config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION"));
     sem_init(&orden_proceso_exit, 0, 0);
     sem_init(&cambio_estado_desalojo, 0, 1);
@@ -147,9 +148,10 @@ int main(int argc, char *argv[])
     }
     free(cola_recursos_bloqueados);
 
-    sem_destroy(&mutex_planificacion_pausada);
+    for(int j = 0; j < 4; j++) sem_destroy(&mutex_planificacion_pausada[j]);
     sem_destroy(&contador_grado_multiprogramacion);
-    sem_destroy(&orden_planificacion);
+    sem_destroy(&orden_planificacion_corto_plazo);
+    sem_destroy(&orden_planificacion_largo_plazo);
     sem_destroy(&cambio_estado_desalojo);
     sem_destroy(&orden_proceso_exit);
     sem_destroy(&mutex_instancias_recursos);
@@ -230,10 +232,10 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                     printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                     
                     // 1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
-                    sem_wait(&mutex_planificacion_pausada);
-                    int planificacion_registrada = PLANIFICACION_PAUSADA;
-                    PLANIFICACION_PAUSADA = 1;
-                    sem_post(&mutex_planificacion_pausada);
+                    if(PLANIFICACION_PAUSADA == 0){
+                        log_debug(logger, "entro aca a detener");
+                        for(int j = 0; j < 4; j++) sem_wait(&mutex_planificacion_pausada[j]); // toma uno a uno los waits sólo si están liberados!
+                    }
 
                     // 2. pregunto por su estado
                     t_pcb* proceso_buscado = buscar_pcb_por_pid(valor_uint_pid);
@@ -279,9 +281,9 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                         printf("pid no existente\n");
 
                     // 4. inicio la planificacion
-                    sem_wait(&mutex_planificacion_pausada);
-                    PLANIFICACION_PAUSADA = planificacion_registrada; // la vuelvo a setear a su valor anterior
-                    sem_post(&mutex_planificacion_pausada);
+                    if(PLANIFICACION_PAUSADA == 0){
+                        for(int j = 0; j < 4; j++) sem_post(&mutex_planificacion_pausada[j]); // libero los waits del resto de los hilos solo si antes los tome!
+                    }
             
             }
         }
@@ -306,18 +308,16 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
             }
         }
         else if (strcmp(comando, "DETENER_PLANIFICACION") == 0){
-            // si la planificacion ya estaba detenida, no pierdo tiempo de procesamiento de procesos escribiendola de vuelta
-            sem_wait(&mutex_planificacion_pausada);
-            PLANIFICACION_PAUSADA = 1; // escritura
-            sem_post(&mutex_planificacion_pausada);
+            if (PLANIFICACION_PAUSADA == 0){
+                for(int j = 0; j < 4; j++) sem_wait(&mutex_planificacion_pausada[j]); // toma uno a uno los waits sólo si están liberados!
+                PLANIFICACION_PAUSADA = 1; // escritura
+            }
             printf("detener planificacion\n");
         }
         else if (strcmp(comando, "INICIAR_PLANIFICACION") == 0){
-            // si la planificacion ya estaba corriendo, perdería tiempo de procesamiento si la excluyo para sobreescribirla con el mismo valor
-            if(PLANIFICACION_PAUSADA != 0) { // como es lectura y sólo puede ocurrir otra lectura simultaneamente, no necesita semaforo (creo ja!)
-                sem_wait(&mutex_planificacion_pausada);
+            if(PLANIFICACION_PAUSADA == 1) { 
+                for(int j = 0; j < 4; j++) sem_post(&mutex_planificacion_pausada[j]); // libero uno a uno los waits de otros hilos para continuar con la planificacion
                 PLANIFICACION_PAUSADA = 0; // escritura
-                sem_post(&mutex_planificacion_pausada);
             }
             printf("iniciar planificacion\n");
         }
@@ -344,41 +344,34 @@ t_pcb* buscar_pcb_por_pid(uint32_t pid_buscado){
 // definicion función hilo corto plazo
 void *planificar_corto_plazo(void *archivo_config){
     while (1){
-        sem_wait(&orden_planificacion); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY o se desbloqueó algún proceso!
-        sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA){ // lectura
-            sem_post(&mutex_planificacion_pausada); 
+        sem_wait(&orden_planificacion_corto_plazo); // solo se sigue la ejecución si ya largo plazo dejó al menos un proceso en READY o se desbloqueó algún proceso!
+        sem_wait(&mutex_planificacion_pausada[1]); // continúa si no fue tomado el MUTEX desde DETENER_PLANIFICACION / FINALIZAR_PROCESO => no está pausada la planificación
 
-            // 1. selecciona próximo proceso a ejecutar
-            algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
+        // 1. selecciona próximo proceso a ejecutar
+        algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
+        sem_post(&mutex_planificacion_pausada[1]); // libero luego de hacer el cambio entre colas! 
 
-            // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
-            enviar_proceso_a_cpu(); // send()
+        // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
+        enviar_proceso_a_cpu(); // send()
 
-            // 3. control QUANTUM una vez que el proceso está en RUNNING!!! (sólo para RR o VRR)
-            if (corresponde_quantum == 1){ 
-                t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
-                if(corresponde_timer_vrr == 1 ) {
-                    timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
-                    log_debug(logger, "estas en quantum vrr creando el timer");
-                }
-                pthread_create(&hilo_quantum, NULL, control_quantum, &(proceso_en_running->pid));
-                pthread_detach(hilo_quantum);  
+        // 3. control QUANTUM una vez que el proceso está en RUNNING!!! (sólo para RR o VRR)
+        if (corresponde_quantum == 1){ 
+            t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
+            if(corresponde_timer_vrr == 1 ) {
+                timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
+                log_debug(logger, "estas en quantum vrr creando el timer");
             }
+            pthread_create(&hilo_quantum, NULL, control_quantum, &(proceso_en_running->pid));
+            pthread_detach(hilo_quantum);  
+        }
 
-            // 4. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
-            recibir_proceso_desalojado(); // recv()
-        }
-        else{
-            sem_post(&mutex_planificacion_pausada);
-            sem_post(&orden_planificacion); // así vuelve a cargar en espera el proceso que NO se ejecutó por estar detenida la planificación
-        }
+        // 4. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
+        recibir_proceso_desalojado(); // recv()
     }
 }
 
 // definicion funcion hilo largo plazo
-void *planificar_largo_plazo(void *archivo_config)
-{
+void *planificar_largo_plazo(void *archivo_config){
     pthread_t thread_NEW_READY, thread_ALL_EXIT;
 
     pthread_create(&thread_NEW_READY, NULL, planificar_new_to_ready, archivo_config);
@@ -450,6 +443,7 @@ void iniciar_proceso(char *path){
 
     list_add(pcb_list, proceso);
     pid++;
+    sem_post(&orden_planificacion_largo_plazo);
 }
 
 t_pcb* extraer_proceso(t_pcb* proceso) {
@@ -521,13 +515,6 @@ fc_puntero obtener_algoritmo_planificacion(){
     return NULL;
 }
 
-void sleep_half_second() {
-    struct timespec tiempo;
-    tiempo.tv_sec = 0;
-    tiempo.tv_nsec = 200000000; // 500 millones de nanosegundos = 0.5 segundos
-    nanosleep(&tiempo, NULL);
-}
-
 // tanto FIFO como RR sacan el primer proceso en READY y lo mandan a RUNNING
 void algoritmo_fifo_rr() {
     log_debug(logger, "estas en FIFO/RR");
@@ -552,7 +539,6 @@ void algoritmo_vrr(){
     primer_elemento->estado = RUNNING; 
     mqueue_push(monitor_RUNNING, primer_elemento);
     log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
-
 }
 
 void* control_quantum(void* args){
@@ -629,13 +615,7 @@ void recibir_proceso_desalojado(){
     }
 
     // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
-    sem_wait(&mutex_planificacion_pausada);
-    // CONTINÚA SÓLO SI LA PLANIFICACION NO ESTÁ PAUSADA!!!
-    while (PLANIFICACION_PAUSADA) {
-        sem_post(&mutex_planificacion_pausada);
-        sem_wait(&mutex_planificacion_pausada);
-    }
-    sem_post(&mutex_planificacion_pausada);
+    sem_wait(&mutex_planificacion_pausada[1]); // continua si no está pausada la planificación!
 
     if(proceso_desalojado->desalojo == PEDIDO_FINALIZACION){
         sem_wait(&cambio_estado_desalojo);
@@ -650,6 +630,7 @@ void recibir_proceso_desalojado(){
             log_debug(logger, "se termino de ejecutar proceso");
             recupera_contexto_proceso(buffer_desalojo); // carga registros en el PCB del proceso en ejecución
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
+            sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             if(mensaje_desalojo == EXIT_PROCESO)
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "SUCCESS");
             else 
@@ -685,6 +666,7 @@ void recibir_proceso_desalojado(){
                 control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
                 recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
+                sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
                 sem_post(&orden_proceso_exit);
                 respuesta_cpu = DESALOJAR;
@@ -703,9 +685,11 @@ void recibir_proceso_desalojado(){
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
                         log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BLOCKED");
                         log_bloqueo_proceso(logger,proceso_desalojado->pid, recurso_solicitado);
+                        sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
                         respuesta_cpu = DESALOJAR;
                     } else {
                         // C) (WAIT) SI ESTÁ DISPONIBLE
+                        sem_post(&mutex_planificacion_pausada[1]); // no hay cambio entre colas libero antes!
                         sprintf(instancias_recursos[posicion_recurso], "%d", (atoi(instancias_recursos[posicion_recurso]) - 1)); // resta una instancia a las instancias del recurso
                         sem_post(&mutex_instancias_recursos);
                         ++proceso_desalojado->recursos[posicion_recurso]; // agrega una instancia a los recursos del proceso en su PCB
@@ -715,11 +699,13 @@ void recibir_proceso_desalojado(){
                 break;
                 case SIGNAL_RECURSO:
                     // B) (SIGNAL) LIBEERA UNA INSTANCIA DEL RECURSO Y DESBLOQUEA PRIMER PROCESO BLOQUEADO PARA EL RECURSO (si es que lo hay)
+                    sem_post(&mutex_planificacion_pausada[1]); // no hay cambio entre colas libero antes!
                     sem_wait(&mutex_instancias_recursos);
                     if(proceso_desalojado->recursos[posicion_recurso] > 0) --proceso_desalojado->recursos[posicion_recurso]; // podría hacer el signal sin hacer antes un wait!
                     // verificar si hay algún proceso en el monitor del recurso 
                     if(!mqueue_is_empty(cola_recursos_bloqueados[posicion_recurso])){
                         // sacar el primer proceso de la lista de los bloqueados y pasarlo a READY!!
+                        sem_wait(&mutex_planificacion_pausada[2]); // control planificacion para mediano plazo!
                         t_pcb* proceso_desbloqueado = mqueue_pop(cola_recursos_bloqueados[posicion_recurso]);
                         ++proceso_desbloqueado->recursos[posicion_recurso];
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
@@ -727,7 +713,8 @@ void recibir_proceso_desalojado(){
                         proceso_desbloqueado->cola_bloqueado = NULL;
                         mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
                         log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
-                        sem_post(&orden_planificacion); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
+                        sem_post(&mutex_planificacion_pausada[2]); // libera luego del cambio entre colas!
+                        sem_post(&orden_planificacion_corto_plazo); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
                     } else {
                         sprintf(instancias_recursos[posicion_recurso], "%d", (atoi(instancias_recursos[posicion_recurso]) + 1)); // suma una instancia a las instancias del recurso
                         sem_post(&mutex_instancias_recursos);
@@ -756,14 +743,13 @@ void recibir_proceso_desalojado(){
         case FIN_QUANTUM:
             control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
             recupera_contexto_proceso(buffer_desalojo);
-            // TODO: SOLO SI LA PLANIFICACION NO ESTA PAUSADA
             proceso_desalojado->estado = READY;
             proceso_desalojado->quantum = config.quantum; // reinicia el quantum en el valor inicial (para VRR)
             mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
             log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
+            sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
-            sem_post(&orden_planificacion);
-            // TODO: SOLO SI LA PLANIFICACION NO ESTA PAUSADA
+            sem_post(&orden_planificacion_corto_plazo);
             // sem_post(&contador_grado_multiprogramacion); SOLO se libera cuando proceso entra a EXIT ¿o cuando proceso se bloquea?
         break;
         
@@ -783,10 +769,12 @@ void recibir_proceso_desalojado(){
             // TODO: revisar si el nombre de la interfaz existe en la lista que corresponda => 1. si no existe EXIT, y sino avanzar
             /*
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
+            sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
             sem_post(&orden_proceso_exit);
             */
             // TODO: si el tipo de interfaz es de tipo GENERICA => 1. si no es: EXIT (lo mismo de arriba), desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
+            // sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
 
             // Respuesta a CPU
             op_code respuesta_cpu_io = DESALOJAR;
@@ -832,38 +820,35 @@ void recupera_contexto_proceso(t_sbuffer* buffer){
 // ------------- INICIO FCS. PLANI. LARGO PLAZO -------------
 void *planificar_new_to_ready(void *archivo_config)
 {
-    while (1)
-    {
-        sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA){ // lectura
-            sem_post(&mutex_planificacion_pausada);
-            if (!mqueue_is_empty(monitor_NEW)){
-                sem_wait(&contador_grado_multiprogramacion);
+    while (1){
+        sem_wait(&orden_planificacion_largo_plazo); // solo cuando hayan procesos en NEW
+        // 1. Tomo grado de multiprogramacion (TODO: devolver el grado de multiprogramacion si no se creo el proceso en memoria!!!)
+        sem_wait(&contador_grado_multiprogramacion);
+        sem_wait(&mutex_planificacion_pausada[0]);
 
-                t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+        // 2. Envía orden a memoria para crear el proceso
+        t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+        t_sbuffer* buffer_proceso_a_memoria = buffer_create(
+            sizeof(uint32_t) // pid 
+            + (uint32_t)strlen(primer_elemento->path) + sizeof(uint32_t) // longitud del string más longitud en sí
+        );
 
-                t_sbuffer* buffer_proceso_a_memoria = buffer_create(
-                    sizeof(uint32_t) // pid 
-                    + (uint32_t)strlen(primer_elemento->path) + sizeof(uint32_t) // longitud del string más longitud en sí
-                );
+        buffer_add_uint32(buffer_proceso_a_memoria, primer_elemento->pid);
+        buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
 
-                buffer_add_uint32(buffer_proceso_a_memoria, primer_elemento->pid);
-                buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
+        cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
+        // TODO: ACÁ MEMORIA DEBERÍA DEVOLVER ALGO PARA SABER SI SE CREÓ OK!!!!!!!!
 
-                cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
-                // TODO: ACÁ MEMORIA DEBERÍA DEVOLVER ALGO PARA SABER SI SE CREÓ OK!!!!!!!!
+        // 3. Envía a READY
+        primer_elemento->estado = READY;
+        mqueue_push(monitor_READY, primer_elemento);
 
-                primer_elemento->estado = READY;
-                mqueue_push(monitor_READY, primer_elemento);
+        log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
+        log_ingreso_ready(logger, monitor_READY);
+        sem_post(&mutex_planificacion_pausada[0]); // libera planificacion luego de mover entre colas
 
-                log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
-                log_ingreso_ready(logger, monitor_READY);
-
-                sem_post(&orden_planificacion); // envia orden de procesamiento a corto plazo
-            }
-        }
-        else
-            sem_post(&mutex_planificacion_pausada);
+        // 4. Envia orden de procesamiento a corto plazo
+        sem_post(&orden_planificacion_corto_plazo); 
     }
 }
 
@@ -881,36 +866,31 @@ void *planificar_all_to_exit(void *args){
     */
     while (1){
         sem_wait(&orden_proceso_exit); // pasa sólo si hay algún proceso en cola EXIT
-        sem_wait(&mutex_planificacion_pausada);
-        if (!PLANIFICACION_PAUSADA){ // lectura
-            sem_post(&mutex_planificacion_pausada);
-            t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
-            switch (proceso_exit->estado){
-                case NEW:
-                    proceso_exit->estado = EXIT;
-                    liberar_proceso_en_memoria(proceso_exit->pid);
-                    log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
-                    break;
-                case READY:
-                case RUNNING:
-                case BLOCKED:
-                    // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
-                    op_code estado_actual = proceso_exit->estado;
-                    liberar_recursos(proceso_exit); // puede asignar procesos a READY (BLOCKED -> READY) => va antes de liberar el grado de multiprogramación: (BLOCKED -> READY) > (NEW -> READY)
-                    // TODO: libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!
-                    liberar_proceso_en_memoria(proceso_exit->pid);
-                    log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
-                    proceso_exit->estado = EXIT;
-                    sem_post(&contador_grado_multiprogramacion); 
-                    break;
-                default:
-                    break;
-            }
-            mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
-        } else{
-            sem_post(&mutex_planificacion_pausada);
-            sem_post(&orden_proceso_exit); // devuelvo el POST si la planificacion estaba desactivada y no se pudo continuar
+        sem_wait(&mutex_planificacion_pausada[3]);
+        t_pcb* proceso_exit = mqueue_peek(monitor_EXIT);
+        switch (proceso_exit->estado){
+            case NEW:
+                proceso_exit->estado = EXIT;
+                liberar_proceso_en_memoria(proceso_exit->pid);
+                log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
+                sem_post(&mutex_planificacion_pausada[3]);
+                break;
+            case READY:
+            case RUNNING:
+            case BLOCKED:
+                // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
+                op_code estado_actual = proceso_exit->estado;
+                liberar_recursos(proceso_exit); // puede asignar procesos a READY (BLOCKED -> READY) => va antes de liberar el grado de multiprogramación: (BLOCKED -> READY) > (NEW -> READY)
+                liberar_proceso_en_memoria(proceso_exit->pid);// TODO: libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!
+                log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
+                sem_post(&mutex_planificacion_pausada[3]);
+                proceso_exit->estado = EXIT;
+                sem_post(&contador_grado_multiprogramacion); 
+                break;
+            default:
+                break;
         }
+        mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
     }
     return NULL;
 }
@@ -928,6 +908,7 @@ void liberar_recursos(t_pcb* proceso_exit){
 
                 // 2. Consulto si existe un proceso que se bloqueó para este recurso
                 if(!mqueue_is_empty(cola_recursos_bloqueados[i])){
+                    sem_wait(&mutex_planificacion_pausada[2]); // control planificacion para mediano plazo!
                     // 3. desbloqueo en dicho caso (todo lo demás se maneja dentro de la ejecución de dicho proceso)
                     t_pcb* proceso_desbloqueado = mqueue_pop(cola_recursos_bloqueados[i]);
                     log_debug(logger, "proceso bloqueado tenia %d instancias para dicho recurso, se le suma 1 ", proceso_desbloqueado->recursos[i]);
@@ -937,7 +918,8 @@ void liberar_recursos(t_pcb* proceso_exit){
                     proceso_desbloqueado->cola_bloqueado = NULL;
                     mqueue_push(monitor_READY, proceso_desbloqueado); // suponemos que esos procesos todavía tienen un espacio reservado dentro del grado de multiprogramacion por lo tanto se pueden volver a agregar a READY sin problema
                     log_cambio_estado_proceso(logger, proceso_desbloqueado->pid, "BLOCKED", "READY");
-                    sem_post(&orden_planificacion); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
+                    sem_post(&mutex_planificacion_pausada[2]); // control planificacion para mediano plazo!
+                    sem_post(&orden_planificacion_corto_plazo); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
                 } else {
                     log_debug(logger, "no hay procesos bloqueados se suma uno a las instancias ya disponibles %s", instancias_recursos[i]);
                     sprintf(instancias_recursos[i], "%d", (atoi(instancias_recursos[i]) + 1));
@@ -1000,11 +982,12 @@ void* atender_cliente(void* cliente){
             // buffer_read...
             // (...)
             break; 
-		case PAQUETE:
+		/*case PAQUETE:
 			t_list* lista = recibir_paquete(cliente_recibido);
 			log_debug(logger, "Me llegaron los siguientes valores:\n");
 			list_iterate(lista, (void*) iterator); //esto es un mapeo
 			break;
+        */
 		case -1:
 			log_error(logger, "Cliente desconectado.");
             // (...)
@@ -1020,18 +1003,6 @@ void* atender_cliente(void* cliente){
 // ------------- FIN FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ------------- INICIO FUNCIONES PARA MEMORIA -------------
-void enviar_path_a_memoria(char* path){
-    uint32_t longitud = (uint32_t)strlen(path);
-    t_sbuffer* buffer_memoria = buffer_create(
-        sizeof(char) * longitud
-    );
-    buffer_add_string(buffer_memoria, longitud, path);
-
-
-    cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_memoria); 
-    log_debug(logger, "envio path, para crear proceso, a memoria");
-} //FUNCION iniciar_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
-
 void liberar_proceso_en_memoria(uint32_t pid_proceso){
     t_sbuffer* buffer_memoria = buffer_create(
         sizeof(uint32_t) //PID
@@ -1039,7 +1010,7 @@ void liberar_proceso_en_memoria(uint32_t pid_proceso){
     buffer_add_uint32(buffer_memoria, pid_proceso);
 
 
-    cargar_paquete(conexion_memoria, FINALIZAR_PROCESO, buffer_memoria); 
+    cargar_paquete(conexion_memoria, ELIMINAR_PROCESO, buffer_memoria); 
     log_debug(logger, "envio pid, a liberar, a memoria");
 } //FUNCION liberar_memoria_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
 // ------------- FIN FUNCIONES PARA MEMORIA -------------
