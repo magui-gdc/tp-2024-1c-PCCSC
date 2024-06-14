@@ -11,6 +11,8 @@ RETARDO_RESPUESTA=1000
 void crear_proceso(int,char*);
 void eliminar_proceso(int);
 void aplicar_retardo();
+int buscar_frame(int);
+
 
 //  FUNCIONES ACCESO A ESPACIO USUARIO
 /*  

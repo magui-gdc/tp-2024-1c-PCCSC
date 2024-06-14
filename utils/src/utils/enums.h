@@ -4,6 +4,7 @@
 typedef enum
 {
 	CONEXION, // cliente - servidor
+	DATOS_MEMORIA, // cpu - memoria
 	PAQUETE,
 	INICIAR_PROCESO, // kernel - memoria
 	ELIMINAR_PROCESO, // kernel - memoria

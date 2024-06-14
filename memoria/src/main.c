@@ -47,6 +47,17 @@ void *atender_cliente(void *cliente){
     while (1){
         int cod_op = recibir_operacion(cliente_recibido); // bloqueante
         switch (cod_op){
+        case CONEXION:
+            recibir_conexion(cliente_recibido);
+        break;
+        case DATOS_MEMORIA:
+            t_sbuffer* buffer_a_cpu_datos_memoria = buffer_create(
+                sizeof(int) * 2
+            );
+            buffer_add_int(buffer_a_cpu_datos_memoria, config.tam_memoria);
+            buffer_add_int(buffer_a_cpu_datos_memoria, config.tam_pagina);
+            cargar_paquete(cliente_recibido, DATOS_MEMORIA, buffer_a_cpu_datos_memoria);
+        break;
         case PEDIR_FRAME:
             t_sbuffer* buffer_pagina = cargar_buffer(cliente_recibido);
             int pagina_enviada = buffer_read_int(buffer_pagina);
@@ -54,7 +65,6 @@ void *atender_cliente(void *cliente){
             if (frame == -1){
                 
             }
-
         break;
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
             t_sbuffer *buffer_path = cargar_buffer(cliente_recibido);
@@ -63,16 +73,16 @@ void *atender_cliente(void *cliente){
             char* path  = buffer_read_string(buffer_path, &longitud_path);
             path[strcspn(path, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
 
-            // crear_proceso(pid, path); // TODO: SIN DEFINIR
+            // crear_proceso(pid, path); 
             log_debug(logger, "CREE EL PROCESO");
             // TODO: DEVUELVE A KERNEL MENSAJE EXITOSO EN CASO DE QUE SE HAYA CREADO CORRECTAMENTE EL PROCESO 
-            break;
+        break;
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
             t_sbuffer* buffer_eliminar = cargar_buffer(cliente_recibido);
             uint32_t pid_eliminar = buffer_read_uint32(buffer_eliminar);
             log_debug(logger, "se mando a eliminar/liberar proceso %u", pid_eliminar);
-            // eliminar_proceso(pid); // TODO: SIN DEFINIR
-            break;
+            // eliminar_proceso(pid); 
+        break;
         case LEER_PROCESO:
             // 1. comienza a contar el timer para calcular retardo en rta a CPU
             t_temporal* timer = temporal_create();
@@ -127,16 +137,7 @@ void *atender_cliente(void *cliente){
                 } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
                 free(instruccion);
             }
-            break;
-        case CONEXION:
-            recibir_conexion(cliente_recibido);
-            break;
-        /*case PAQUETE:
-            t_list *lista = recibir_paquete(cliente_recibido);
-            log_debug(logger, "Me llegaron los siguientes valores:\n");
-            list_iterate(lista, (void *)iterator); // esto es un mapeo
-            break;
-        */
+        break;
         case -1:
             log_error(logger, "Cliente desconectado.");
             close(cliente_recibido); // cierro el socket accept del cliente
@@ -158,6 +159,7 @@ void aplicar_retardo(){
 
 
 void inicializar_memoria(){
+    /* TODO: FIX => memoria es un void*
     memoria.num_frames = config.tam_memoria / config.tam_pagina;    //calculo del espacio de los frames
     memoria.espacio_usuario = malloc(config.tam_memoria);           
     memoria.tabla_paginas = malloc(memoria.num_frames * sizeof(int));
@@ -165,6 +167,7 @@ void inicializar_memoria(){
     for (int i = 0; i < memoria.num_frames; i++) { //esto es para recorrer la tabla e inicializarla toda en -1 
         memoria.tabla_paginas[i] = -1;
     } 
+    */
 
 }
 
@@ -188,22 +191,25 @@ void crear_proceso(int pid, char* path){
 }
 
 int encontrar_hueco() { //busco el hueco libre mas proximo!! 
-    
+    /* TODO: FIX => memoria es un void*
     for (int i = 0; i < memoria.num_frames; i++) {
         if (memoria.tabla_paginas[i] == -1) {
             return i;
         }
     }
+    */
     return -1;
 }
 
 void eliminar_proceso(int pid) { //vuelvo a poner la tabla en -1!!! yay
+    /* TODO: FIX => memoria es un void*
     for (int i = 0; i < memoria.num_frames; i++) {
         if (memoria.tabla_paginas[i] == pid) {
             memoria.tabla_paginas[i] = -1;
         }
     }
     log_info(logger, "proceso %d eliminado", pid);
+    */
 }
 
 int buscar_frame(int pagina){

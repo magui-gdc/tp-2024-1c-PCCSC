@@ -16,5 +16,5 @@ typedef struct {
 }t_tlb;
 
 
-void solicitar_frame_a_memoria();
+int solicitar_frame_a_memoria(int, int);
 int buscar_en_tlb (int);

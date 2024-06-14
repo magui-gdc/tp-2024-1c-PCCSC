@@ -38,6 +38,16 @@ int main(int argc, char* argv[]) {
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
     enviar_conexion("CPU", conexion_memoria);
 
+    // le pido los valores de TAM_MEMORIA y TAM_PAGINA
+    int operacion = DATOS_MEMORIA;
+    send(conexion_memoria, &operacion, sizeof(operacion), 0);
+    recibir_operacion(conexion_memoria); // espera a recibir los datos desde memoria
+    t_sbuffer *buffer_memoria = cargar_buffer(conexion_memoria);
+    TAM_MEMORIA = buffer_read_int(buffer_memoria);
+    TAM_PAGINA  = buffer_read_int(buffer_memoria);
+    buffer_destroy(buffer_memoria);
+    log_debug(logger, "obtengo valores de tam_memoria %d y de tam_pagina %d", TAM_MEMORIA, TAM_PAGINA);
+
     // ------------ CONEXION SERVIDOR - CLIENTES ------------
     // conexion dispatch
     int socket_servidor_dispatch = iniciar_servidor(config.puerto_escucha_dispatch);
@@ -45,9 +55,6 @@ int main(int argc, char* argv[]) {
     log_info(logger, config.puerto_escucha_dispatch);
     log_info(logger, "Server CPU DISPATCH");
 
-    t_sbuffer *buffer_memoria = cargar_buffer(conexion_memoria);
-    TAM_MEMORIA = buffer_read_int(buffer_memoria);
-    TAM_PAGINA  = buffer_read_int(buffer_memoria);
     
     // conexion interrupt
     int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
@@ -230,10 +237,7 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
     // TODO: MMU en caso de traducción dire. lógica a dire. física
-    char *mensaje = (char *)malloc(128);
-    sprintf(mensaje, "CPU: LINEA DE INSTRUCCION %s", leido);
-    log_debug(logger, "%s", mensaje);
-    free(mensaje);
+    log_debug(logger, "CPU: LINEA DE INSTRUCCION %s", leido);
 
     char **tokens = string_split(leido, " ");
     char *comando = tokens[0];
@@ -250,7 +254,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
         if (strcmp(comando, "SUM") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
-            SUM(parametro1, parametro2, logger);
+            SUM(parametro1, parametro2);
         } else if (strcmp(comando, "SUB") == 0){
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 

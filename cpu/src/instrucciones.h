@@ -23,7 +23,7 @@ void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** da
 void set(char* registro, char* valor);
 void MOV_IN (char* registroDato, char* registroDireccion);
 void MOV_OUT (char* registroDireccion, char* registroDato);
-void SUM (char* registroDireccion, char* registroOrigen, t_log* logger);
+void SUM (char* registroDireccion, char* registroOrigen);
 void SUB (char* registroDireccion, char* registroOrigen);
 void jnz(char* registro, char* numeroInstruccion);
 

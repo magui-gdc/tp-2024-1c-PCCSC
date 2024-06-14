@@ -153,11 +153,7 @@ void MOV_OUT (char* registroDireccion, char* registroDato){
     MOV_IN(registroDireccion, registroDato);
 }
 
-void SUM (char* registroDireccion, char* registroOrigen, t_log* logger){
-    char *prueba = (char *)malloc(128);
-    sprintf(prueba, "%s: %d, %s: %d", registroDireccion, obtenerTipo(registroDireccion), registroOrigen, obtenerTipo(registroOrigen));
-    log_info(logger, "%s", prueba);
-    free(prueba);
+void SUM (char* registroDireccion, char* registroOrigen){
     if(obtenerTipo(registroOrigen) == obtenerTipo(registroDireccion)){
         uint8_t* dir_8bits1;
         uint32_t* dir_32bits1;
@@ -191,12 +187,6 @@ void SUM (char* registroDireccion, char* registroOrigen, t_log* logger){
         char* arraySuma = (char*)malloc((longitudSuma + 1));
 
         intToCadena(suma, arraySuma, longitudSuma);
-
-        char *mens = (char *)malloc(128);
-        sprintf(mens, "suma %d, array %s, longitud %d", suma, arraySuma, longitudSuma);
-        log_info(logger, "%s", mens);
-        free(mens);
-
         set(registroDireccion, arraySuma);
         free(arraySuma);
 
