@@ -109,3 +109,5 @@ void algoritmo_vrr();
 void* control_quantum(void*);
 // ejecutar al ppio. para los casos donde se desaloja el proceso en actual ejecución, cualquiera sea el motivo!
 void control_quantum_desalojo();
+// carga quantum restante en caso de VRR (se debe ejecutar al ppio de cada desalojo por instrucción IO)
+void cargar_quantum_restante(t_pcb* proceso_desalojado);

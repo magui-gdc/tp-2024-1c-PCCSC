@@ -597,22 +597,12 @@ void recibir_proceso_desalojado(){
 
     // 2. Carga buffer y consulta si es instrucción IO o no (0: no; 1: si)
     t_sbuffer *buffer_desalojo = cargar_buffer(conexion_cpu_dispatch);
-    uint8_t aviso_instruccion_io = buffer_read_uint8(buffer_desalojo);
 
     // 3. Carga motivo de desalojo!
     t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
     sem_wait(&cambio_estado_desalojo);
-    proceso_desalojado->desalojo = (aviso_instruccion_io == 1) ? DESALOJADO_POR_IO : DESALOJADO;
+    proceso_desalojado->desalojo = DESALOJADO;
     sem_post(&cambio_estado_desalojo);
-
-    // -- cargo quantum restante si el algoritmo es VRR y si se desalojó por instruccion IO (si fuese desalojo por fin de recurso debería ir a READY comun)
-    if(corresponde_timer_vrr == 1 && proceso_desalojado->desalojo == DESALOJADO_POR_IO){
-        log_debug(logger, "corresponde guardar quantum restante IO");
-        if (milisegundos_transcurridos < proceso_desalojado->quantum ) 
-            proceso_desalojado->quantum -= milisegundos_transcurridos;
-        else 
-            proceso_desalojado->quantum = config.quantum; // se consumió todo el QUANTUM RESTANTE: en estos casos luego de desalojar la IO debería volver a READY COMÚN
-    }
 
     // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
     sem_wait(&mutex_planificacion_pausada[1]); // continua si no está pausada la planificación!
@@ -755,6 +745,7 @@ void recibir_proceso_desalojado(){
         
         case IO_GEN_SLEEP:
             control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
+            cargar_quantum_restante(proceso_desalojado); // al principio luego de cada instrucción IO
             uint32_t length_io;
             char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io);
             interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
@@ -804,6 +795,17 @@ void control_quantum_desalojo(){
         temporal_stop(timer_quantum);
         temporal_destroy(timer_quantum);
         log_debug(logger, "timmer stop, quantum contado vrr: %ld", milisegundos_transcurridos );
+    }
+}
+
+void cargar_quantum_restante(t_pcb* proceso_desalojado) {
+    // -- cargo quantum restante si el algoritmo es VRR y si se desalojó por instruccion IO (si fuese desalojo por fin de recurso debería ir a READY comun)
+    if(corresponde_timer_vrr == 1){
+        log_debug(logger, "corresponde guardar quantum restante IO");
+        if (milisegundos_transcurridos < proceso_desalojado->quantum ) 
+            proceso_desalojado->quantum -= milisegundos_transcurridos;
+        else 
+            proceso_desalojado->quantum = config.quantum; // se consumió todo el QUANTUM RESTANTE: en estos casos luego de desalojar la IO debería volver a READY COMÚN
     }
 }
 

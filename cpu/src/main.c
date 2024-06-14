@@ -217,10 +217,7 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
             t_sbuffer *buffer_desalojo_interrupt = NULL;
             desalojo_proceso(&buffer_desalojo_interrupt, conexion_kernel, primera_interrupcion->motivo_interrupcion);
 
-            char *mensaje = (char *)malloc(128);
-            sprintf(mensaje, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
-            log_debug(logger, "%s", mensaje);
-            free(mensaje);
+            log_debug(logger, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
         }
         list_clean_and_destroy_elements(interrupciones_proceso_actual, free); // Libera cada elemento en la lista filtrada
         list_destroy(interrupciones_proceso_actual);
@@ -272,15 +269,11 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer *buffer_desalojo_wait = buffer_create(
                 (uint32_t)strlen(recurso) + sizeof(uint32_t) + //la longitud del string
                 sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE NO INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
-            buffer_add_uint8(buffer_desalojo_wait, (uint8_t)0); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_desalojo_wait, (uint32_t)strlen(recurso), recurso);
 
-            char *msg_recurso = (char *)malloc(128);
-            sprintf(msg_recurso, "Recurso pedido a kernel %s", recurso);
-            log_debug(logger, "%s", msg_recurso);
-            free(msg_recurso);
+            log_debug(logger, "Recurso pedido a kernel %s", recurso);
 
             desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, instruccion_recurso); // agrega ctx en el buffer y envía paquete a kernel
 
@@ -305,10 +298,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
                 sizeof(uint32_t) +
                 sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_gen_sleep, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_gen_sleep, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_uint32(buffer_interfaz_gen_sleep, tiempo_sleep);
             desalojo_proceso(&buffer_interfaz_gen_sleep, conexion_kernel, IO_GEN_SLEEP); // agrega ctx en el buffer y envía paquete a kernel
@@ -332,10 +324,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
                 sizeof(uint32_t) * 2 // REGISTROS PARA IO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_stdin_read, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_stdin_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_uint32(buffer_interfaz_stdin_read, reg_d);
             buffer_add_uint32(buffer_interfaz_stdin_read, reg_t);
@@ -360,10 +351,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
                 sizeof(uint32_t) * 2 // REGISTROS PARA IO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_stdout_write, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_stdout_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_uint32(buffer_interfaz_stdout_write, reg_d);
             buffer_add_uint32(buffer_interfaz_stdout_write, reg_t);
@@ -387,10 +377,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_fs_create, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_file), nombre_file);
             desalojo_proceso(&buffer_interfaz_fs_create, conexion_kernel, IO_FS_CREATE); // agrega ctx en el buffer y envía paquete a kernel
@@ -413,10 +402,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_fs_delete, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_file), nombre_file);
             desalojo_proceso(&buffer_interfaz_fs_delete, conexion_kernel, IO_FS_DELETE); // agrega ctx en el buffer y envía paquete a kernel
@@ -441,10 +429,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) // REGISTRO PARA IO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_fs_truncate, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_fs_truncate, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_string(buffer_interfaz_fs_truncate, (uint32_t)strlen(nombre_file), nombre_file);
             buffer_add_uint32(buffer_interfaz_fs_truncate, reg_t);
@@ -472,10 +459,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) * 3 // REGISTRO PARA IO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_fs_write, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_file), nombre_file);
             buffer_add_uint32(buffer_interfaz_fs_write, reg_d);
@@ -505,10 +491,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) * 3 // REGISTRO PARA IO
                 + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO DE INSTRUCCION IO
+                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_uint8(buffer_interfaz_fs_read, (uint8_t)1); // SIEMPRE PRIMERO EL AVISO DE INST. IO (hacia KERNEL)
             buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
             buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_file), nombre_file);
             buffer_add_uint32(buffer_interfaz_fs_read, reg_d);
@@ -535,12 +520,11 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
 // solo carga el contexto y retorna proceso (si tuvo que cargar otro valor antes suponemos que ya venía cargado en el buffer que se pasa por parámetro)
 void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo){
     // O. Creo buffer si no vino cargado => si vino cargado, se supone que ya tiene el size que considera los registros que se cargan en esta función. Esto tiene lógica para cuando se necesite pasar otros valores en el buffer además del contexto de ejecución, como por ejemplo en la INST WAIT que se pasa el recurso que se quiere utilizar. 
-    if(!*buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros + aviso no instruccion IO = 0
+    if(!*buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros 
         *buffer_contexto_proceso = buffer_create(
             sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-            + sizeof(uint8_t) * 5 // REGISTROS: AX, BX, CX, DX + AVISO NO INSTRUCCION IO 
+            + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
         );
-        buffer_add_uint8(*buffer_contexto_proceso, (uint8_t)0); // se carga sólo si no hay nada cargado, de lo contrario suponemos que ya vino cargado desde la instruccion (SIEMPRE VA PRIMERO EN EL BUFFER)
     }
     // 1. Cargo buffer con contexto de ejecución del proceso en el momento del desalojo
     buffer_add_registros(*buffer_contexto_proceso, &(registros));
