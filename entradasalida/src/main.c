@@ -56,23 +56,54 @@ int main(int argc, char* argv[]) {
 
     ////////////////////////////////////////////////////////
     //TODO: desarrollar funciones según tipo
+    
+    //TODO: esperar que reciba comunicacion del kernel y verificar que el codigo de abajo este bien xd
+
+    //TODO: free() punteros
+    t_sbuffer* buffer_operacion = cargar_buffer(conexion_kernel);
+    int op = recibir_operacion(buffer_operacion);
+    uint32_t length;
+    char* leido = buffer_read_string(buffer_operacion, &length); 
+    //leido[strcspn(leido, "\n")] = '\0'; ??
+    char **tokens = string_split(leido, " ");
+
 
     switch (interfaz_io->clase)
     {
     case GEN:
-        char* tiempo = config.tiempo_unidad_trabajo;
-        uint32_t iteraciones; //TODO: conseguir las iteraciones
-        sleep(atoi(tiempo) * iteraciones);
+        //TODO: conseguir las iteraciones}
+        if(op == IO_GEN_SLEEP){
+            uint32_t iteraciones = (uin32_t)atoi(tokens[2]);
+            io_gen_sleep(iteraciones);
+        }
         //TODO: enviar flag de llegada de IO al kernel
         break;
     case IN:
+        if(op == IO_STDIN_READ){
 
+        }
         break;
     case OUT:
-
+        if(op == IO_STDOUT_WRITE){
+            
+        }
         break;
     case FS:
-
+        if(op == IO_FS_CREATE){
+            
+        }
+        if(op == IO_FS_DELETE){
+            
+        }
+        if(op == IO_FS_TRUNCATE){
+            
+        }
+        if(op == IO_FS_WRITE){
+            
+        }
+        if(op == IO_FS_READ){
+            
+        }
         break;
     default:
         break;
@@ -224,3 +255,45 @@ void cargar_config_struct_IO_fs(t_config* archivo_config){
     config.block_count = config_get_string_value(archivo_config, "RETRASO_COMPACTACION");
 }
 
+//-----------------FUNCIONES DE IO-----------------//
+
+    ///////////////////////// GENERICA /////////////////////////
+
+void io_gen_sleep(uint32_t iteraciones){
+    char* tiempo = config.tiempo_unidad_trabajo;
+    sleep(atoi(tiempo) * iteraciones);
+}
+
+    ///////////////////////// STDIN    /////////////////////////
+
+void io_stdin_read(char* direc, uint32_t size){
+
+}
+
+    //////////////////////// STDOUT    /////////////////////////
+
+void io_stdout_write(char* direc, uint32_t size){
+
+}
+
+    ///////////////////////// DIALFS   /////////////////////////
+
+void io_fs_create(char* arch){
+
+}
+
+void io_fs_delete(char* arch){
+
+}
+
+void io_fs_truncate(char* arch, uint32_t size){
+    
+}
+
+void io_fs_write(char* arch, char* direc, uint32_t size, uint32_t pointer){
+
+}
+
+void io_fs_read(char* arch, char* direc, uint32_t size, uint32_t pointer){
+
+}
