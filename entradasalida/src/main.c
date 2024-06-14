@@ -8,17 +8,14 @@ config_struct config;
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
-    //t_config* archivo_config = iniciar_config("entradasalida.config");
-    t_log* logger = log_create("entradasalida.log", "Interfaz I/O", 1, LOG_LEVEL_DEBUG);
+    logger = log_create("entradasalida.log", "Interfaz I/O", 1, LOG_LEVEL_DEBUG);
 
     decir_hola("una Interfaz de Entrada/Salida");
 
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
-    t_config* arch_config = config_create(obtener_path());
+    t_config* archivo_config = config_create(obtener_path());
     char* nombre = obtener_path(); //TODO: esto en realidad lo nombra como el path, hay que buscar una forma que dado el path tengamos el nombre del file
-    t_io* interfaz_io = inicializar_io(nombre, arch_config); //TODO: free(interfaz_io)
-    free(nombre);
-    free(arch_config);
+    t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
 
@@ -26,11 +23,9 @@ int main(int argc, char* argv[]) {
 
     // establecer conexion con KERNEL
     conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
-    //enviar_conexion("Interfaz I/O", conexion_kernel);
-
    
     //----- IDENTIFICO LA IO CON EL KERNEL
-    //TODO: el kernel deber verificar que la IO no exista aun para no iniciarla dos veces y meterla en una lista de IOs de su tipo
+    // TODO: el kernel deber verificar que la IO no exista aun para no iniciarla dos veces y meterla en una lista de IOs de su tipo
     
     t_sbuffer* buffer_conexion = buffer_create(
         (uint32_t)strlen(interfaz_io->nombre_id) + sizeof(uint32_t) // tamanio del string
@@ -38,17 +33,14 @@ int main(int argc, char* argv[]) {
     );
 
     buffer_add_string(buffer_conexion, (uint32_t)strlen(interfaz_io->nombre_id), interfaz_io->nombre_id);
-    buffer_add_string(buffer_conexion, (uint32_t)strlen(config.tipo_interfaz), config.tipo_interfaz)
+    buffer_add_string(buffer_conexion, (uint32_t)strlen(config.tipo_interfaz), config.tipo_interfaz);
     cargar_paquete(conexion_kernel, CONEXION, buffer_conexion);
-
-    paquete(conexion_kernel);
-    log_info(logger, "envie paquete a kernel");
+    log_info(logger, "Envie conexion a KERNEL");
     
     // establecer conexion con MEMORIA
     conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
     enviar_conexion("Interfaz I/O", conexion_memoria);
-    paquete(conexion_memoria);
-    log_info(logger, "envie paquete a memoria");
+    log_info(logger, "Envie conexion a MEMORIA");
 
 
     sem_t mutex_config;
@@ -60,53 +52,58 @@ int main(int argc, char* argv[]) {
     //TODO: esperar que reciba comunicacion del kernel y verificar que el codigo de abajo este bien xd
 
     //TODO: free() punteros
-    t_sbuffer* buffer_operacion = cargar_buffer(conexion_kernel);
-    int op = recibir_operacion(buffer_operacion);
-    uint32_t length;
-    char* leido = buffer_read_string(buffer_operacion, &length); 
-    //leido[strcspn(leido, "\n")] = '\0'; ??
-    char **tokens = string_split(leido, " ");
 
+    // un ciclo para esperar constantemente indicaciones del lado KERNEL
+    while(1){
 
-    switch (interfaz_io->clase)
-    {
-    case GEN:
-        //TODO: conseguir las iteraciones}
-        if(op == IO_GEN_SLEEP){
-            uint32_t iteraciones = (uin32_t)atoi(tokens[2]);
-            io_gen_sleep(iteraciones);
-        }
-        //TODO: enviar flag de llegada de IO al kernel
-        break;
-    case IN:
-        if(op == IO_STDIN_READ){
+        // 1. siempre ejecuta recibir_operación antes de cargar el buffer ya que recibir_operación hace un RECV bloqueante y lee la operación que es LO PRIMERO que se manda en un paquete, luego el buffer en sí 
+        int op = recibir_operacion(conexion_kernel); // DE MEMORIA SIEMPRE ENVIA A DEMANDA A PARTIR DE LAS PETICIONES DE KERNEL POR LO QUE NO HACE FALTA CICLO 
+        
+        // 2. Se inicializa el buffer. Se lee lo que haya en el buffer desde cada operación ya que conociendo la operacion sabes qué tenes que recibir/leer
+        t_sbuffer* buffer_operacion = cargar_buffer(conexion_kernel); 
 
+        // 3. Se procesa la operación
+        switch (interfaz_io->clase){
+        case GEN:
+            if(op == IO_GEN_SLEEP){
+                // ACA RECIBE EL RESTO DEL CONTENIDO DEL BUFFER PORQUE SABE LO QUE DEBERÍA RECIBIR 
+                // EN ESE CASO RECIBIRÍA UN NÚMERO PARA HACER LAS ITERACIONES
+                uint32_t iteraciones = buffer_read_uint32(buffer_operacion);
+                io_gen_sleep(iteraciones);
+                buffer_destroy(buffer_operacion); // liberar SIEMPRE el buffer después de usarlo
+            }
+            //TODO: enviar flag de llegada de IO al kernel
+            break;
+        case IN:
+            if(op == IO_STDIN_READ){
+
+            }
+            break;
+        case OUT:
+            if(op == IO_STDOUT_WRITE){
+                
+            }
+            break;
+        case FS:
+            if(op == IO_FS_CREATE){
+                
+            }
+            if(op == IO_FS_DELETE){
+                
+            }
+            if(op == IO_FS_TRUNCATE){
+                
+            }
+            if(op == IO_FS_WRITE){
+                
+            }
+            if(op == IO_FS_READ){
+                
+            }
+            break;
+        default:
+            break;
         }
-        break;
-    case OUT:
-        if(op == IO_STDOUT_WRITE){
-            
-        }
-        break;
-    case FS:
-        if(op == IO_FS_CREATE){
-            
-        }
-        if(op == IO_FS_DELETE){
-            
-        }
-        if(op == IO_FS_TRUNCATE){
-            
-        }
-        if(op == IO_FS_WRITE){
-            
-        }
-        if(op == IO_FS_READ){
-            
-        }
-        break;
-    default:
-        break;
     }
 
 
@@ -127,6 +124,7 @@ int main(int argc, char* argv[]) {
 
     ///////////////////////////////////////////////////
     log_destroy(logger);
+    free(nombre);
 	config_destroy(archivo_config);
 	liberar_conexion(conexion_kernel);
     liberar_conexion(conexion_memoria);
@@ -137,7 +135,7 @@ int main(int argc, char* argv[]) {
 
 
 //////////////////////////////////////////// PRUEBA DE ENVIO DE PAQUETES ///////////////////////////(XD)//////////////////////////
-
+/*
 void paquete(int conexion) {
 	char* leido = malloc(sizeof(char));
 	t_paquete* paquete;
@@ -162,10 +160,11 @@ void paquete(int conexion) {
 	enviar_paquete(paquete, conexion);
 	eliminar_paquete(paquete);
 }
+*/
 
 ////////////// CONFIGURACIÓN DEL CONFIG Y DERIVADOS ////////////////////////
 
-inicializar_io(char* nombre, t_config* archivo_config){
+t_io* inicializar_io(char* nombre, t_config* archivo_config){
     t_io* interfaz = malloc(sizeof(t_io)); //TODO: free(interfaz)
     interfaz->nombre_id = nombre;
     interfaz->archivo = archivo_config;
@@ -174,7 +173,7 @@ inicializar_io(char* nombre, t_config* archivo_config){
     return interfaz;
 }
 
-void selector_carga_config (t_config* archivo_config){
+IO_class selector_carga_config (t_config* archivo_config){
 
     char* tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
     IO_class clase;
@@ -191,7 +190,7 @@ void selector_carga_config (t_config* archivo_config){
         cargar_config_struct_IO_fs(archivo_config);
         clase = FS;
     } else {
-        printf("interfaz no reconocida XD: %s\n", tipo_interfaz); // como se pone el log de q esta mal!!!?????
+        log_error(logger, "interfaz no reconocida XD: %s", tipo_interfaz);
         clase = MISSING;
     }
     return clase;
@@ -260,8 +259,8 @@ void cargar_config_struct_IO_fs(t_config* archivo_config){
     ///////////////////////// GENERICA /////////////////////////
 
 void io_gen_sleep(uint32_t iteraciones){
-    char* tiempo = config.tiempo_unidad_trabajo;
-    sleep(atoi(tiempo) * iteraciones);
+    char* tiempo = config.tiempo_unidad_trabajo; 
+    usleep(atoi(tiempo) * iteraciones * 1000); // EL TIEMPO UNIDAD TRABAJO ESTÁ EXPRESADO EN MS => usar usleep que trabaja con microsegundos! 
 }
 
     ///////////////////////// STDIN    /////////////////////////
@@ -296,4 +295,10 @@ void io_fs_write(char* arch, char* direc, uint32_t size, uint32_t pointer){
 
 void io_fs_read(char* arch, char* direc, uint32_t size, uint32_t pointer){
 
+}
+
+
+// definirla para que no lance error la compilación por UTILSERVER.C
+void* atender_cliente(void* cliente) {
+    return NULL;
 }

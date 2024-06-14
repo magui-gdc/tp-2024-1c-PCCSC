@@ -28,7 +28,7 @@ typedef struct {
     char* tipo_interfaz;
     int socket_interfaz;
     int disponibilidad; // 0: si esta libre; 1: si está siendo usado por otro proceso
-    t_queue* cola_bloqueados;
+    t_mqueue* cola_bloqueados;
 } t_interfaz;
 
 typedef struct{
@@ -101,6 +101,7 @@ t_pcb* extraer_proceso(t_pcb* proceso);
 void liberar_recursos(t_pcb* proceso_exit);
 void liberar_proceso_en_memoria(uint32_t pid_proceso);
 void enviar_interrupcion_a_cpu(t_pic interrupcion);
+t_list* lista_interfaces_segun_tipo(char* tipo_interfaz);
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();

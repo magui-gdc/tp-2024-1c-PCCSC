@@ -1,6 +1,8 @@
 #include <utils/utilsCliente.h>
+#include <utils/utilsServer.h>
 #include <commons/config.h>
 #include <utils/config.h>
+#include <commons/bitarray.h>
 #include <utils/buffer.h>
 #include <semaphore.h>
 
@@ -67,7 +69,7 @@ void paquete(int);
 
 t_io* inicializar_io(char*, t_config*);
 
-void selector_carga_config(t_config*);
+IO_class selector_carga_config(t_config*);
 
 ////// DIALFS
 

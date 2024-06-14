@@ -28,8 +28,6 @@ typedef enum
     IO_FS_CREATE, // io
     IO_FS_DELETE, // io
     IO_FS_TRUNCATE, // io
-	IO_FS_WRITE, // io
-	IO_FS_READ, // io
 	DESALOJAR, // KERNEL - CPU 
 	CONTINUAR, // KERNEL - CPU
 	PEDIR_FRAME, // CPU - MEMORIA

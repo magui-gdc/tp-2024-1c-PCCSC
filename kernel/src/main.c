@@ -48,6 +48,7 @@ sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (
 sem_t mutex_planificacion_pausada[4], contador_grado_multiprogramacion, orden_planificacion_corto_plazo, orden_planificacion_largo_plazo, orden_proceso_exit, cambio_estado_desalojo;
 
 // ---------- INTERFACES DE IOS --------- //
+t_list* interfaces_conectadas; // creo que conviene solo una lista de todas las interfaces para poder identificarlas más rápido en el sistema
 t_list* interfaces_genericas;
 t_list* interfaces_stdin;
 t_list* interfaces_stdout;
@@ -80,6 +81,7 @@ int main(int argc, char *argv[])
         cola_recursos_bloqueados[i] = mqueue_create();
 
     quantum_en_microsegundos = config.quantum * 1000; // para RR
+    interfaces_conectadas = list_create();
     interfaces_genericas = list_create();
     interfaces_stdin = list_create();
     interfaces_stdout = list_create();
@@ -162,6 +164,7 @@ int main(int argc, char *argv[])
     sem_destroy(&orden_proceso_exit);
     sem_destroy(&mutex_instancias_recursos);
 
+    list_destroy(interfaces_conectadas);
     list_destroy(interfaces_genericas);
     list_destroy(interfaces_stdin);
     list_destroy(interfaces_stdout);
@@ -753,30 +756,53 @@ void recibir_proceso_desalojado(){
         break;
         
         case IO_GEN_SLEEP:
+            // 1. Controles QUANTUM
             control_quantum_desalojo(); // SIEMPRE, si corresponde desalojar proceso por ERROR/BLOQUEO/EXIT/ => pausar el quantum y el timer
             cargar_quantum_restante(proceso_desalojado); // al principio luego de cada instrucción IO
+
+            // 2. Recupero datos del Buffer
             uint32_t length_io;
             char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io);
             interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
             uint32_t tiempo = buffer_read_uint32(buffer_desalojo);
-            recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB
-            
-            char *mensaje_io = (char *)malloc(256);
-            sprintf(mensaje_io, "recibimos en IN_GEN_SLEEP interfaz %s", interfaz_solicitada);
-            log_debug(logger, "%s", mensaje_io);
-            free(mensaje_io);
 
-            // TODO: revisar si el nombre de la interfaz existe en la lista que corresponda => 1. si no existe EXIT, y sino avanzar
-            /*
-            mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
-            sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
-            log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
-            sem_post(&orden_proceso_exit);
-            */
-            // TODO: si el tipo de interfaz es de tipo GENERICA => 1. si no es: EXIT (lo mismo de arriba), desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
+            recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB
+            log_debug(logger, "recibimos en IN_GEN_SLEEP interfaz %s", interfaz_solicitada);
+
+            // 3. Revisar si el nombre de la interfaz existe en la lista de interfaces conectadas => EXISTE: continua; NO EXISTE: mandar proceso a EXIT
+            bool buscar_por_nombre(void* data) {
+                return strcmp(((t_interfaz*)data)->nombre_interfaz, interfaz_solicitada) == 0;
+            };
+
+            t_interfaz* interfaz = (t_interfaz*)list_remove_by_condition(interfaces_conectadas, buscar_por_nombre);
+            if(!interfaz) { // la interfaz no existe o no está conectada
+                mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
+                sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
+                log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
+                sem_post(&orden_proceso_exit);
+            } else {
+                if (strcmp(interfaz->tipo_interfaz, "GENERICA") == 0){
+                    // TODO: evaluar semáforo
+                    proceso_desalojado->estado = BLOCKED;
+                    mqueue_push(interfaz->cola_bloqueados, mqueue_pop(monitor_RUNNING));
+                    log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BLOCKED");
+                    sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
+                    if(interfaz->disponibilidad == 0) { // interfaz disponible!
+                        // TODO MANDAR AL SOCKET de la interfaz la instrucción con sus parámetros
+                    } else { // interfaz no disponible
+                        // NADA => se liberará desde IO_GEN_SLEEP cuando alguna interfaz devuelva el proceso luego de ejecutar dicha instrucción
+                    }
+                } else { // la operación no corresponde con su tipo de interfaz 
+                    mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
+                    sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
+                    log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
+                    sem_post(&orden_proceso_exit);
+                }
+            }
+            // TODO: si el tipo de interfaz es de tipo GENERICA desalojo proceso; 2. si la I/O esta disponible: mandas el buffer al socket de la interfaz y bloqueas (y agregar el proceso a cola FIFO proceso en uso por interfaz VER); 3. si la I/O no esta disponible, mandas el proceso a la cola de bloqueados de la interfaz y lo pones en estado blocked
             // sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
 
-            // Respuesta a CPU
+            // Respuesta a CPU:
             op_code respuesta_cpu_io = DESALOJAR;
             ssize_t bytes_enviados_io = send(conexion_cpu_dispatch, &respuesta_cpu_io, sizeof(respuesta_cpu_io), 0);
             if (bytes_enviados_io == -1) {
@@ -960,25 +986,35 @@ void liberar_memoria_proceso(t_pcb* proceso){
 // ------------- INICIO FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
 void* atender_cliente(void* cliente){
 	int cliente_recibido = *(int*) cliente;
+    char *nombre_interfaz, *tipo_interfaz;
 	while(1){
 		int cod_op = recibir_operacion(cliente_recibido); // bloqueante
 		switch (cod_op){
 		case CONEXION:
-			//recibir_conexion(cliente_recibido); // TODO: acá KERNEL recibiría una conexion con una interfaz I/O 
+			// 1. KERNEL recibe una conexion con una interfaz I/O 
             t_sbuffer* buffer_conexion = cargar_buffer(cliente_recibido);
-            uint32_t length;
-            char* nombre_interfaz = buffer_read_string(buffer_conexion, &length);
+            uint32_t length_nombre, length_tipo_interfaz;
+            nombre_interfaz = buffer_read_string(buffer_conexion, &length_nombre);
             nombre_interfaz[strcspn(nombre_interfaz, "\n")] = '\0';
+            tipo_interfaz = buffer_read_string(buffer_conexion, &length_tipo_interfaz);
 
-            // TODO: CARGAR STRUCT T_INTERFAZ
-            t_interfaz* interfaz_conectada;
-            interfaz_conectada->nombre_interfaz = nombre_interfaz; 
+            // 2. CARGAR NUEVA T_INTERFAZ
+            t_interfaz* interfaz_conectada = malloc(sizeof(t_interfaz));
+            interfaz_conectada->nombre_interfaz = malloc(strlen(nombre_interfaz) + 1); // espacio para el '/0'
+            strcpy(interfaz_conectada->nombre_interfaz, nombre_interfaz);
+            interfaz_conectada->tipo_interfaz = malloc(strlen(tipo_interfaz) + 1);
+            strcpy(interfaz_conectada->tipo_interfaz, tipo_interfaz);
             interfaz_conectada->socket_interfaz = cliente_recibido;
+            interfaz_conectada->cola_bloqueados = mqueue_create();
+            interfaz_conectada->disponibilidad = 0; 
             //(...)
-            // según el tipo agregar al lista
-            // AGREGAR T_INTERFAZ A LISTA DE INTERFACES (SE PUEDE CREAR UNA LISTA POR TIPO DE INTERFAZ)
-            list_add(interfaces_genericas, interfaz_conectada);
 
+            // 2. según el tipo agregar a la lista
+            //t_list* lista_interfaz = lista_interfaces_segun_tipo(tipo_interfaz);
+            // AGREGAR T_INTERFAZ A LISTA DE INTERFACES (SE PUEDE CREAR UNA LISTA POR TIPO DE INTERFAZ)
+            list_add(interfaces_conectadas, interfaz_conectada);
+
+            buffer_destroy(buffer_conexion);
 			break;
         case IO_GEN_SLEEP:
             // TODO: la interfaz devuelve el proceso luego de ejecutar la instruccion IO_GEN_SLEEP y necesitas: desbloquear proceso actual y mandarlo a READY y además si hay un proceso bloqueado en la cola de esta interfaz, lo envías a la interfaz (hacer parecido lo mismo que hicimos en recibir_proceso_desalojado)
@@ -1000,16 +1036,44 @@ void* atender_cliente(void* cliente){
 			break;
         */
 		case -1:
-			log_error(logger, "Cliente desconectado.");
-            // (...)
+			log_debug(logger, "Se desconectó la interfaz %s", nombre_interfaz);
+            // cuando se desconecta una interfaz habría que hacer algo así:
+            // 1. TODO: si la interfaz tenía procesos tomados/bloqueados mandarlos a EXIT!
+            
+            // 2. Se lo saca de la lista de interfaces conectadas
+            bool buscar_por_nombre(void* data) {
+                return strcmp(((t_interfaz*)data)->nombre_interfaz, nombre_interfaz) == 0;
+            };
+
+            t_interfaz* interfaz_desconectada = (t_interfaz*)list_remove_by_condition(interfaces_conectadas, buscar_por_nombre);
+
+            // 3. liberar memoria
+            free(interfaz_desconectada->nombre_interfaz);
+            free(interfaz_desconectada->tipo_interfaz);
+            mqueue_destroy(interfaz_desconectada->cola_bloqueados);
+            free(interfaz_desconectada);
+
 			close(cliente_recibido); // cierro el socket accept del cliente
-			free(cliente); // libero el malloc reservado para el cliente
+			free(cliente); // libero el malloc reservado para el cliente desde servidor escucha
 			pthread_exit(NULL); // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
 		default:
 			log_warning(logger, "Operacion desconocida.");
 			break;
 		}
 	}
+}
+
+t_list* lista_interfaces_segun_tipo(char* tipo_interfaz){
+    if (strcmp(tipo_interfaz, "GENERICA") == 0) {
+        return interfaces_genericas;
+    } else if (strcmp(tipo_interfaz, "STDIN") == 0) {
+        return interfaces_stdin;
+    } else if (strcmp(tipo_interfaz, "STDOUT") == 0) {
+       return interfaces_stdout;
+    } else if (strcmp(tipo_interfaz, "DIALFS") == 0) {
+        return interfaces_dialfs;
+    }
+    return NULL;
 }
 // ------------- FIN FUNCIONES PARA MULTIPLEXACION INTERFACES I/O -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
