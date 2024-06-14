@@ -47,8 +47,11 @@ sem_t mutex_instancias_recursos; // mutex para las instancias dde cada recurso (
 // ---------- SEMAFOROS ---------- //
 sem_t mutex_planificacion_pausada[4], contador_grado_multiprogramacion, orden_planificacion_corto_plazo, orden_planificacion_largo_plazo, orden_proceso_exit, cambio_estado_desalojo;
 
-// ---------- INTERFACES --------- //
+// ---------- INTERFACES DE IOS --------- //
 t_list* interfaces_genericas;
+t_list* interfaces_stdin;
+t_list* interfaces_stdout;
+t_list* interfaces_dialfs;
 
 int main(int argc, char *argv[])
 {
@@ -76,8 +79,11 @@ int main(int argc, char *argv[])
     for (int i = 0; i < cantidad_recursos; i++)
         cola_recursos_bloqueados[i] = mqueue_create();
 
-    interfaces_genericas = list_create();
     quantum_en_microsegundos = config.quantum * 1000; // para RR
+    interfaces_genericas = list_create();
+    interfaces_stdin = list_create();
+    interfaces_stdout = list_create();
+    interfaces_dialfs = list_create();
 
     // -- INICIALIZACION SEMAFOROS -- //
     for(int j = 0; j < 4; j++) sem_init(&mutex_planificacion_pausada[j], 0, 1);
@@ -157,6 +163,9 @@ int main(int argc, char *argv[])
     sem_destroy(&mutex_instancias_recursos);
 
     list_destroy(interfaces_genericas);
+    list_destroy(interfaces_stdin);
+    list_destroy(interfaces_stdout);
+    list_destroy(interfaces_dialfs);
     list_destroy(pcb_list);
 
     log_destroy(logger);
