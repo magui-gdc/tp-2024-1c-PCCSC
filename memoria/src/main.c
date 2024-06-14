@@ -28,6 +28,8 @@ int main(int argc, char *argv[]){
 
     pthread_join(thread_memoria, NULL);
 
+    // init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
+
     log_destroy(logger);
     config_destroy(archivo_config);
 
@@ -59,12 +61,12 @@ void *atender_cliente(void *cliente){
             cargar_paquete(cliente_recibido, DATOS_MEMORIA, buffer_a_cpu_datos_memoria);
         break;
         case PEDIR_FRAME:
-            t_sbuffer* buffer_pagina = cargar_buffer(cliente_recibido);
+           /* t_sbuffer* buffer_pagina = cargar_buffer(cliente_recibido);
             int pagina_enviada = buffer_read_int(buffer_pagina);
             int frame = buscar_frame(pagina_enviada);
             if (frame == -1){
                 
-            }
+            } */
         break;
         case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
             t_sbuffer *buffer_path = cargar_buffer(cliente_recibido);
@@ -73,7 +75,7 @@ void *atender_cliente(void *cliente){
             char* path  = buffer_read_string(buffer_path, &longitud_path);
             path[strcspn(path, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
 
-            // crear_proceso(pid, path); 
+            // crear_proceso(pid_iniciar, path); 
             log_debug(logger, "CREE EL PROCESO");
             // TODO: DEVUELVE A KERNEL MENSAJE EXITOSO EN CASO DE QUE SE HAYA CREADO CORRECTAMENTE EL PROCESO 
         break;
@@ -150,68 +152,19 @@ void *atender_cliente(void *cliente){
     }
 }
 
+void crear_proceso(uint32_t pid, char* path){
+    uint32_t tid = create_tabla_paginas(pid);
+    add_psuedo_pcb(pid, tid);
+}
+
+void eliminar_proceso(uint32_t pid){
+    free_tabla_paginas(pid); 
+    remove_from_bitmap(pid);  
+    remove_from_lista_procesos(pid);
+}
 
 ////// funciones memoria
 
 void aplicar_retardo(){
     sleep(config.retardo_respuesta);    // asi nomas???
-}
-
-
-void inicializar_memoria(){
-    /* TODO: FIX => memoria es un void*
-    memoria.num_frames = config.tam_memoria / config.tam_pagina;    //calculo del espacio de los frames
-    memoria.espacio_usuario = malloc(config.tam_memoria);           
-    memoria.tabla_paginas = malloc(memoria.num_frames * sizeof(int));
-
-    for (int i = 0; i < memoria.num_frames; i++) { //esto es para recorrer la tabla e inicializarla toda en -1 
-        memoria.tabla_paginas[i] = -1;
-    } 
-    */
-
-}
-
-void crear_proceso(int pid, char* path){
-    
-    FILE *archivo = fopen(path, "r");
-    if (!archivo) {
-        log_error(logger, "el archivo del path '%s' no se abre :( ", path);
-        return;
-    }
-
-    /*
-    
-            IMPLEMENTATION COMING SOON
-    
-    
-    */
-
-    fclose(archivo);
-    log_info(logger, "proceso %d cargado en memoria yay!!", pid);
-}
-
-int encontrar_hueco() { //busco el hueco libre mas proximo!! 
-    /* TODO: FIX => memoria es un void*
-    for (int i = 0; i < memoria.num_frames; i++) {
-        if (memoria.tabla_paginas[i] == -1) {
-            return i;
-        }
-    }
-    */
-    return -1;
-}
-
-void eliminar_proceso(int pid) { //vuelvo a poner la tabla en -1!!! yay
-    /* TODO: FIX => memoria es un void*
-    for (int i = 0; i < memoria.num_frames; i++) {
-        if (memoria.tabla_paginas[i] == pid) {
-            memoria.tabla_paginas[i] = -1;
-        }
-    }
-    log_info(logger, "proceso %d eliminado", pid);
-    */
-}
-
-int buscar_frame(int pagina){
-    return -1;
 }
