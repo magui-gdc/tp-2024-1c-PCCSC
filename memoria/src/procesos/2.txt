@@ -1,3 +1,4 @@
+IO_GEN_SLEEP entradaio 2
 WAIT RA
 SET AX 5
 SET BX 9

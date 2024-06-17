@@ -38,9 +38,9 @@ int main(int argc, char* argv[]) {
     log_info(logger, "Envie conexion a KERNEL");
     
     // establecer conexion con MEMORIA
-    conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
-    enviar_conexion("Interfaz I/O", conexion_memoria);
-    log_info(logger, "Envie conexion a MEMORIA");
+    //conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
+    //enviar_conexion("Interfaz I/O", conexion_memoria);
+    //log_info(logger, "Envie conexion a MEMORIA");
 
 
     sem_t mutex_config;
@@ -106,6 +106,7 @@ int main(int argc, char* argv[]) {
                 
             }
             if(op == IO_FS_WRITE){
+                // todo: se le habla a memoria
                 
             }
             if(op == IO_FS_READ){

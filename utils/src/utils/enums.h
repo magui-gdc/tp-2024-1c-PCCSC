@@ -19,7 +19,7 @@ typedef enum
 	FINALIZAR_PROCESO,
 	NO_FINALIZADO,
     DESALOJAR_PROCESO,
-	IO_GEN_SLEEP, // kernel - io
+	IO_GEN_SLEEP, // kernel - io (16)
     IO_STDIN_READ, // kernel - io
     IO_STDOUT_WRITE, // kernel - io
 	IO_FS_WRITE, // kernel - io
@@ -32,7 +32,12 @@ typedef enum
 	CONTINUAR, // KERNEL - CPU
 	PEDIR_FRAME, // CPU - MEMORIA
 	TLB_MISS, //CPU - MEMORIA
-	FRAME_SOLICIDATO // MEMORIA - CPU
+	FRAME_SOLICIDATO, // MEMORIA - CPU+
+	MOV_IN, 
+	MOV_OUT,
+	RESIZE,
+	OUT_OF_MEMORY,
+	COPY_STRING
 }op_code;
 
 

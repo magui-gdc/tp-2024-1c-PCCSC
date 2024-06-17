@@ -269,6 +269,24 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
+        } else if (strcmp(comando, "MOV_IN") == 0){
+            // TODO: mandas a memoria el MOV_IN con los valores (SEND)
+            // cargar_paquete(conexion_memoria, MOV_IN, *buffer_ya_cargado);
+            // int recibir_operacion = recibir_operacion(conexion_memoria); // bloqueando
+            // switch(recibir_operacion)
+            // CONTINUAR => no hace nada
+            // SI ES CUALQUIER MENSAJE QUE REQUIERA DESALOJO: además de mandarle de mandarle a kernel:
+            /*
+            t_sbuffer *buffer_desalojo = NULL;
+            desalojo_proceso(&buffer_desalojo, conexion_kernel, recibir_operacion);
+            */
+           // TENES QUE CARGAR LAS VARIABLES DE DESALOJO DE CPU
+           /*
+           seguir_ejecucion = 0;
+            desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
+           */
+            
+            int esperar_operacion = recibir_operacion(conexion_memoria); // bloqueando
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;

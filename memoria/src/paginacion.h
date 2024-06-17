@@ -30,9 +30,10 @@ typedef struct{         // y donde van los datos ahre??????
 typedef struct{
     uint32_t pid;  //PID DEL PROCESO ASOCIADO A LA TABLA
     uint32_t tid;  // el TABLE ID jajaja
-    t_list* paginas;
+    char* path_proceso; // path de las instrucciones
+    t_list* paginas; // t_paginas*
     int cant_paginas;
-} t_tabla_paginas;
+} t_tabla_paginas; // POR PROCESO: todo: ya con esto podrías asociar proceso con tabla de páginas sin t_pseudo_pcb
 
 typedef struct{ // SIEMPRE CARGADO EN MEMORIA
     t_list* tabla_paginas;

@@ -79,6 +79,25 @@ void *atender_cliente(void *cliente){
             log_debug(logger, "CREE EL PROCESO");
             // TODO: DEVUELVE A KERNEL MENSAJE EXITOSO EN CASO DE QUE SE HAYA CREADO CORRECTAMENTE EL PROCESO 
         break;
+        case MOV_IN:
+            // TODO: leer buffer
+            // y hacer cosas
+            // si fue todo bien: mensaje CONTINUAR
+            /*
+            en caso de continuar(que no necesitas mandar nada mas qye le mensaje)
+            op_code respuesta_cpu = CONTINUAR;
+            ssize_t bytes_enviados = send(cliente_recibido, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+            if (bytes_enviados == -1) {
+                perror("Error enviando el dato");
+                exit(EXIT_FAILURE);
+            }
+            */
+            // mandas este codigo OUT_OF_MEMORY
+            // LIBERAR buffer, memoria utilizada dinamicamente..
+        break;
+        case MOV_OUT:
+            
+        break;
         case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
             t_sbuffer* buffer_eliminar = cargar_buffer(cliente_recibido);
             uint32_t pid_eliminar = buffer_read_uint32(buffer_eliminar);
@@ -155,6 +174,7 @@ void *atender_cliente(void *cliente){
 void crear_proceso(uint32_t pid, char* path){
     uint32_t tid = create_tabla_paginas(pid);
     add_psuedo_pcb(pid, tid);
+    // TODO: agregar a t_tabla_paginas el path y ya con eso no haría falta t_pseudo_pcb
 }
 
 void eliminar_proceso(uint32_t pid){

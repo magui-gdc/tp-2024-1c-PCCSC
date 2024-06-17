@@ -1,4 +1,5 @@
 WAIT RA
+IO_GEN_SLEEP entradaio 3
 WAIT RB
 WAIT RB
 WAIT RA

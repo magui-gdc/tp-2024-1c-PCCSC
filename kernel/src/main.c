@@ -865,6 +865,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
         sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
         buffer_destroy(buffer_instruccion_io); // al final NO se utiliza
+        log_debug(logger, "estas en interfaz inexistente %u", proceso_desalojado->pid);
         log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
         sem_post(&orden_proceso_exit);
     } else {
@@ -894,6 +895,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             buffer_destroy(buffer_instruccion_io); // al final NO se utiliza
+            log_debug(logger, "lainterfaz no corresponde con su tipo %u", proceso_desalojado->pid);
             log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
             sem_post(&orden_proceso_exit);
         }
