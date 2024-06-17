@@ -77,6 +77,21 @@ void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** da
     } 
 }
 
+uint32_t obtener_valor_registro(char* registro){
+    uint8_t* valor_uint8;
+    uint32_t* valor_uint32;
+    obtenerDireccionMemoria(registro, &valor_uint8, &valor_uint32);
+    switch (obtenerTipo(registro)){
+    case _UINT8:
+        return (uint32_t)*valor_uint8; 
+    break;
+    case _UINT32:
+        return *valor_uint32;
+    break;
+    }
+    return 0;
+}
+
 void set(char* registro, char* valor){
     int valor_numerico = atoi(valor);
     

@@ -311,20 +311,14 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_gen_sleep, tiempo_sleep);
             desalojo_proceso(&buffer_interfaz_gen_sleep, conexion_kernel, IO_GEN_SLEEP); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
         } else if (strcmp(comando, "IO_STDIN_READ") == 0){
             char* nombre_interfaz = tokens[1];
-            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            uint32_t reg_d = obtener_valor_registro(tokens[2]);
+            uint32_t reg_t = obtener_valor_registro(tokens[3]);
             //io_stdin_read(nombre_interfaz, registro_direccion, registro_tamaño);
             t_sbuffer *buffer_interfaz_stdin_read = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
@@ -338,20 +332,14 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_stdin_read, reg_t);
             desalojo_proceso(&buffer_interfaz_stdin_read, conexion_kernel, IO_STDIN_READ); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
         } else if (strcmp(comando, "IO_STDOUT_WRITE") == 0){
             char* nombre_interfaz = tokens[1];
-            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            uint32_t reg_d = obtener_valor_registro(tokens[2]);
+            uint32_t reg_t = obtener_valor_registro(tokens[3]);
             //io_stdout_write(nombre_interfaz, registro_direccion, registro_tamaño);
             t_sbuffer *buffer_interfaz_stdout_write = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
@@ -365,16 +353,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_stdout_write, reg_t);
             desalojo_proceso(&buffer_interfaz_stdout_write, conexion_kernel, IO_STDOUT_WRITE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+
         } else if (strcmp(comando, "IO_FS_CREATE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
@@ -390,16 +372,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_file), nombre_file);
             desalojo_proceso(&buffer_interfaz_fs_create, conexion_kernel, IO_FS_CREATE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+
         } else if (strcmp(comando, "IO_FS_DELETE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
@@ -415,20 +391,14 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_file), nombre_file);
             desalojo_proceso(&buffer_interfaz_fs_delete, conexion_kernel, IO_FS_DELETE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+
         } else if (strcmp(comando, "IO_FS_TRUNCATE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
+            uint32_t reg_t = obtener_valor_registro(tokens[3]);
             //io_fs_truncate(nombre_interfaz, nombre_archivo, registro tamaño);
             t_sbuffer *buffer_interfaz_fs_truncate = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
@@ -443,22 +413,16 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_fs_truncate, reg_t);
             desalojo_proceso(&buffer_interfaz_fs_truncate, conexion_kernel, IO_FS_TRUNCATE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
         } else if (strcmp(comando, "IO_FS_WRITE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
-            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
+            uint32_t reg_d = obtener_valor_registro(tokens[3]);
+            uint32_t reg_t = obtener_valor_registro(tokens[4]);
+            uint32_t reg_p = obtener_valor_registro(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
             //io_fs_write(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
             t_sbuffer *buffer_interfaz_fs_write = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
@@ -475,22 +439,16 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_fs_write, reg_p);
             desalojo_proceso(&buffer_interfaz_fs_write, conexion_kernel, IO_FS_WRITE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
         } else if (strcmp(comando, "IO_FS_READ") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
-            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
+            uint32_t reg_d = obtener_valor_registro(tokens[3]);
+            uint32_t reg_t = obtener_valor_registro(tokens[4]);
+            uint32_t reg_p = obtener_valor_registro(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
             //io_fs_read(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
             t_sbuffer *buffer_interfaz_fs_read = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
@@ -507,16 +465,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_fs_read, reg_p);
             desalojo_proceso(&buffer_interfaz_fs_read, conexion_kernel, IO_FS_READ); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
         }
         // TODO: SEGUIR
     }

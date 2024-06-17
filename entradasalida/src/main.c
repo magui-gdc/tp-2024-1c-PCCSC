@@ -66,13 +66,24 @@ int main(int argc, char* argv[]) {
         switch (interfaz_io->clase){
         case GEN:
             if(op == IO_GEN_SLEEP){
-                // ACA RECIBE EL RESTO DEL CONTENIDO DEL BUFFER PORQUE SABE LO QUE DEBERÍA RECIBIR 
+                // A. ACA RECIBE EL RESTO DEL CONTENIDO DEL BUFFER PORQUE SABE LO QUE DEBERÍA RECIBIR 
                 // EN ESE CASO RECIBIRÍA UN NÚMERO PARA HACER LAS ITERACIONES
                 uint32_t iteraciones = buffer_read_uint32(buffer_operacion);
+
+                // B. Ejecutar instrucción!
                 io_gen_sleep(iteraciones);
+
+                // C. Responder a KERNEL
+                op_code respuesta_kernel = IO_LIBERAR; // si todo fue ok SIEMPRE enviar IO_LIBERAR
+                ssize_t bytes_enviados = send(conexion_kernel, &respuesta_kernel, sizeof(respuesta_kernel), 0);
+                if (bytes_enviados == -1) {
+                    log_error(logger, "Error enviando el dato");
+                    exit(EXIT_FAILURE);
+                }
+
+                // D. Liberar memoria
                 buffer_destroy(buffer_operacion); // liberar SIEMPRE el buffer después de usarlo
             }
-            //TODO: enviar flag de llegada de IO al kernel
             break;
         case IN:
             if(op == IO_STDIN_READ){

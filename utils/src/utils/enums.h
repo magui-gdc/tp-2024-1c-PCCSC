@@ -19,15 +19,15 @@ typedef enum
 	FINALIZAR_PROCESO,
 	NO_FINALIZADO,
     DESALOJAR_PROCESO,
-	RECIBI_INTERFAZ, // interfaz - kernel
-	IO_GEN_SLEEP, // io
-    IO_STDIN_READ, // io
-    IO_STDOUT_WRITE, // io
-	IO_FS_WRITE, // io
-	IO_FS_READ, // io
-    IO_FS_CREATE, // io
-    IO_FS_DELETE, // io
-    IO_FS_TRUNCATE, // io
+	IO_GEN_SLEEP, // kernel - io
+    IO_STDIN_READ, // kernel - io
+    IO_STDOUT_WRITE, // kernel - io
+	IO_FS_WRITE, // kernel - io
+	IO_FS_READ, // kernel - io
+    IO_FS_CREATE, // kernel - io
+    IO_FS_DELETE, // kernel - io
+    IO_FS_TRUNCATE, // kernel - io
+	IO_LIBERAR, // io - kernel (luego de terminar de ejecutar la instrucción IO exitosamente)
 	DESALOJAR, // KERNEL - CPU 
 	CONTINUAR, // KERNEL - CPU
 	PEDIR_FRAME, // CPU - MEMORIA

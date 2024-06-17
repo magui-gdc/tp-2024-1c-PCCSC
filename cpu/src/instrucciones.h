@@ -26,5 +26,6 @@ void MOV_OUT (char* registroDireccion, char* registroDato);
 void SUM (char* registroDireccion, char* registroOrigen);
 void SUB (char* registroDireccion, char* registroOrigen);
 void jnz(char* registro, char* numeroInstruccion);
+uint32_t obtener_valor_registro(char* registro);
 
 
