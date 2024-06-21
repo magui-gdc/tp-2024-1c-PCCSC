@@ -188,3 +188,26 @@ void eliminar_proceso(uint32_t pid){
 void aplicar_retardo(){
     sleep(config.retardo_respuesta);    // asi nomas???
 }
+
+// RESIZE
+
+void resize_proceso(uint32_t pid, int new_size){
+    // int size_resultante = size_actual - new_size 
+    // if size_resultante > 0 -> es para reducir... else if size_resultante < 0 -> es para ampliar el proceso.. else nada.
+}
+
+// AMPLIACION 
+
+void ampliar_proceso(uint32_t pid, int new_size){
+    
+    int cant_paginas_requeridas = new_size/config.tam_memoria;
+    if(!suficiente_memoria(new_size) || !suficientes_frames(cant_paginas_requeridas)){
+        log_error(logger, "No hay suficiente espacio para este proceso");
+        exit(OUT_OF_MEMORY);
+    }
+    else{
+        
+
+    }
+}
+

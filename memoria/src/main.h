@@ -20,3 +20,15 @@ void aplicar_retardo();
 */
 
 char *leer_memoria(int, int, uint32_t);
+
+//  AJUSTAR TAMANIO DE PROCESO
+/*
+    Ampliación de un proceso
+    Se deberá ampliar el tamaño del proceso al final del mismo, pudiendo solicitarse múltiples páginas. 
+    Es posible que en un punto no se puedan solicitar más marcos ya que la memoria se encuentra llena, 
+    por lo que en ese caso se deberá contestar con un error de Out Of Memory.
+
+*/
+
+void ampliar_proceso(uint32_t);
+

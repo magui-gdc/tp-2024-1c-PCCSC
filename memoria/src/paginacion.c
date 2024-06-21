@@ -18,7 +18,8 @@ t_list* lista_procesos; //lista de procesos con sus respectivas listas de pagina
 /*          NACIMIENTO            */
 
 void init_memoria(){
-    memoria = malloc(config.tam_memoria);
+    int cant_frames= config.tam_memoria/config.tam_pagina;
+    memoria = (void*)calloc(cant_frames, config.tam_pagina);
     init_lista_tablas();
     void init_bitmap_frames();
     void init_lista_procesos();
@@ -217,4 +218,29 @@ void remover_y_eliminar_elementos_de_lista(t_list* lista_original){
         free(element);
     }
     list_iterator_destroy(iterator);
+}
+
+/*          AUXILIARES PARA RESIZE           */
+
+int cant_frames_libres(){
+    return list_size(lista_frames_libres());   
+}
+
+t_list* lista_frames_libres(){
+    bool frame_libre(void* frame_libre){    // esta la declaramos en el .h???
+        if(frame->presence){
+            return true;
+        }
+        else return false;
+    }
+    return list_filter(bitmap_frames_libres, bool(*frame_libre)(void *));
+}
+
+
+bool suficiente_memoria(int memoria_solicitada){
+    return memoria_solicitada < config.tam_memoria;
+}
+
+bool suficientes_frames(int cant_paginas_requeridas){
+    return cant_paginas_requeridas <= cant_frames_libres();
 }
