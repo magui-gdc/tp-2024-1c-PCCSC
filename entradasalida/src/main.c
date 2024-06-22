@@ -38,9 +38,12 @@ int main(int argc, char* argv[]) {
     log_info(logger, "Envie conexion a KERNEL");
     
     // establecer conexion con MEMORIA
-    //conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
-    //enviar_conexion("Interfaz I/O", conexion_memoria);
-    //log_info(logger, "Envie conexion a MEMORIA");
+
+    if(interfaz_io->clase != GEN){
+        conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
+
+        log_info(logger, "Envie conexion a MEMORIA");
+    }
 
 
     sem_t mutex_config;
@@ -80,13 +83,14 @@ int main(int argc, char* argv[]) {
                     log_error(logger, "Error enviando el dato");
                     exit(EXIT_FAILURE);
                 }
-
-                // D. Liberar memoria
-                buffer_destroy(buffer_operacion); // liberar SIEMPRE el buffer después de usarlo
             }
             break;
         case IN:
             if(op == IO_STDIN_READ){
+                uint32_t direc = buffer_read_uint32(buffer_operacion);
+                uint32_t size = buffer_read_uint32(buffer_operacion);
+
+                io_stdin_read(direc, size, conexion_memoria);
 
             }
             break;
@@ -116,6 +120,10 @@ int main(int argc, char* argv[]) {
         default:
             break;
         }
+
+
+        // Liberar memoria
+        buffer_destroy(buffer_operacion); // liberar SIEMPRE el buffer después de usarlo
     }
 
 
@@ -277,35 +285,78 @@ void io_gen_sleep(uint32_t iteraciones){
 
     ///////////////////////// STDIN    /////////////////////////
 
-void io_stdin_read(char* direc, uint32_t size){
+void io_stdin_read(uint32_t direc, uint32_t size, int socket){
+
+    // CARGO VALOR
+
+    uint32_t asig_esp = sizeof(char) * size;
+    char* input = malloc(asig_esp);
+    scanf("%s", input); //TODO: verificar el overflow error
+    
+    // VERIFICO OVFLOW
+
+    if(strlen(input) > size){
+        log_error(logger, "El input produjo un overflow");
+        exit(EXIT_FAILURE);
+    }
+
+    // CREO Y MANDO EL BUFFER
+
+    t_sbuffer* buffer_memoria = buffer_create(
+        (uint32_t)strlen(input) + sizeof(uint32_t) // string a ingresar
+        + sizeof(uint32_t) // direccion de memoria
+    );
+
+    buffer_add_string(buffer_memoria, (uint32_t)strlen(input), input);
+    buffer_add_uint32(direc);
+    //TODO: aca no va IO_STDIN_READ, sino la instruccion que corresponda al cargado de datos en memoria (que puede ser esta misma si quieren)
+    cargar_paquete(socket, IO_STDIN_READ, buffer_memoria);
+
+    // ESPERO RESPUESTA DE MEMORIA
+
+    //TODO: verificar el "ok" de memoria
+
+    int ok = 0;
+    while (ok == 0){ // este while tal vez esta de mas
+        int op_code = recibir_operacion(socket);
+        if(op_code == IO_MEMORY_DONE){
+            ok = buffer_read_int(buffer_memoria) //?
+            if(ok == -1){ //?
+                log_error(logger, "Error al cargar valor en memoria");
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+    
+    buffer_destroy(buffer_memoria);
 
 }
 
     //////////////////////// STDOUT    /////////////////////////
 
-void io_stdout_write(char* direc, uint32_t size){
+void io_stdout_write(uint32_t direc, uint32_t size, int socket){
 
 }
 
     ///////////////////////// DIALFS   /////////////////////////
 
-void io_fs_create(char* arch){
+void io_fs_create(char* arch, int socket){
 
 }
 
-void io_fs_delete(char* arch){
+void io_fs_delete(char* arch, int socket){
 
 }
 
-void io_fs_truncate(char* arch, uint32_t size){
+void io_fs_truncate(char* arch, uint32_t size, int socket){
     
 }
 
-void io_fs_write(char* arch, char* direc, uint32_t size, uint32_t pointer){
+void io_fs_write(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
 
 }
 
-void io_fs_read(char* arch, char* direc, uint32_t size, uint32_t pointer){
+void io_fs_read(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
 
 }
 
