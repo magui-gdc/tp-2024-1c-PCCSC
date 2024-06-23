@@ -71,6 +71,8 @@ t_io* inicializar_io(char*, t_config*);
 
 IO_class selector_carga_config(t_config*);
 
+void responder_kernel(int socket_k);
+
 ////// DIALFS
 
 // FUNCIONES PRINCIPALES
