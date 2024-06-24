@@ -14,7 +14,7 @@ HACER TODO LO DE MEMORIA DEL LADO KERNEL
 const char *estado_proceso_strings[] = {
     "NEW", 
     "READY", 
-    "RUNNING", 
+    "EXEC", 
     "BLOCKED", 
     "EXIT"
 };
@@ -248,9 +248,9 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                     // 3. trabajo la solicitud de finalización según su estado
                     if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
                         
-                        // RUNNING -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
-                        if(proceso_buscado->estado == RUNNING){ 
-                            // cuando el proceso está en running hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
+                        // EXEC -> puede estar todavía en CPU o justo siendo desalojado (caso más borde pero bueno): 
+                        if(proceso_buscado->estado == EXEC){ 
+                            // cuando el proceso está en EXEC hay que avisarle a cpu que lo desaloje o a corto plazo que no procese su mensaje de desalojo, según donde esté
                             if(proceso_buscado->desalojo == SIN_DESALOJAR){ 
                                 // cuando el proceso está todavía en CPU mando interrupción
                                 t_pic interrupt = {proceso_buscado->pid, FINALIZAR_PROCESO, 0};
@@ -270,7 +270,7 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                                 log_debug(logger, "PEDIDO_FINALIZACION");
                                 // la idea es que desde corto plazo sólo se procese su motivo de desalojo cuando no haya un pedido de finalizacion! y si hay un pedido de finalización, se mande el proceso a EXIT!
                             }
-                                // en el caso de RUNNING, el proceso de desalojo (recibir el código de operación) se maneja desde CORTO PLAZO!
+                                // en el caso de EXEC, el proceso de desalojo (recibir el código de operación) se maneja desde CORTO PLAZO!
                         } else { 
                             // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
                             t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado); // lo saco de su cola actual
@@ -356,7 +356,7 @@ void *planificar_corto_plazo(void *archivo_config){
         // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
         enviar_proceso_a_cpu(); // send()
 
-        // 3. control QUANTUM una vez que el proceso está en RUNNING!!! (sólo para RR o VRR)
+        // 3. control QUANTUM una vez que el proceso está en EXEC!!! (sólo para RR o VRR)
         if (corresponde_quantum == 1){ 
             t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
             if(corresponde_timer_vrr == 1 ) {
@@ -517,13 +517,13 @@ fc_puntero obtener_algoritmo_planificacion(){
     return NULL;
 }
 
-// tanto FIFO como RR sacan el primer proceso en READY y lo mandan a RUNNING
+// tanto FIFO como RR sacan el primer proceso en READY y lo mandan a EXEC
 void algoritmo_fifo_rr() {
     log_debug(logger, "estas en FIFO/RR");
     t_pcb* primer_elemento = mqueue_pop(monitor_READY);
-    primer_elemento->estado = RUNNING; 
+    primer_elemento->estado = EXEC; 
     mqueue_push(monitor_RUNNING, primer_elemento);
-    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
+    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
 }
 
 // en el caso de VRR, verifica si hay un proceso con MAYOR PRIORIDAD (aquellos que fueron desalojados por IO) y manda esos procesos a ejecutar
@@ -538,9 +538,9 @@ void algoritmo_vrr(){
         primer_elemento->quantum = config.quantum; // me aseguro que si está en READY COMUN siempre parta del quantum del sistema!! (por si desalojó desp de volver de instruccion IO por recurso no disponible, por ejemplo)
         quantum_en_microsegundos = config.quantum * 1000; // toma el quantum del sistema como RR
     }
-    primer_elemento->estado = RUNNING; 
+    primer_elemento->estado = EXEC; 
     mqueue_push(monitor_RUNNING, primer_elemento);
-    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "RUNNING");
+    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
 }
 
 void* control_quantum(void* args){
@@ -675,7 +675,7 @@ void recibir_proceso_desalojado(){
                         mqueue_push(cola_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
                         proceso_desalojado->cola_bloqueado = cola_recursos_bloqueados[posicion_recurso]; // TODO: SIMON HACER ALGO ASÍ PARA INTERFACES!!
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
-                        log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BLOCKED");
+                        log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "BLOCKED");
                         log_bloqueo_proceso(logger,proceso_desalojado->pid, recurso_solicitado);
                         sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
                         respuesta_cpu = DESALOJAR;
@@ -739,7 +739,7 @@ void recibir_proceso_desalojado(){
             proceso_desalojado->estado = READY;
             proceso_desalojado->quantum = config.quantum; // reinicia el quantum en el valor inicial (para VRR)
             mqueue_push(monitor_READY, mqueue_pop(monitor_RUNNING));
-            log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "READY");
+            log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "READY");
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             log_desalojo_fin_de_quantum(logger, proceso_desalojado->pid);
             sem_post(&orden_planificacion_corto_plazo);
@@ -874,7 +874,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             sem_wait(&(interfaz->cola_bloqueados->mutex)); // bloqueo para que NO se libere este mismo proceso desde el hilo IO hasta que no tenga cargada su instrucción en caso de corresponder!!! y tmb para esperar el cambio de disponibilidad desde el otro hilo
             proceso_desalojado->estado = BLOCKED;
             queue_push(interfaz->cola_bloqueados->cola, mqueue_pop(monitor_RUNNING)); 
-            log_cambio_estado_proceso(logger, proceso_desalojado->pid, "RUNNING", "BLOCKED");
+            log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "BLOCKED");
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             if(interfaz->disponibilidad == 0) { // interfaz disponible! => NO había otro proceso bloqueado para dicha interfaz
                 cargar_paquete(interfaz->socket_interfaz, instruccion, buffer_instruccion_io); // ya libera el buffer
@@ -944,7 +944,7 @@ void *planificar_all_to_exit(void *args){
     ----- PARA TODOS LOS OTROS CASOS, SEA DESDE CONSOLA O DESDE CORTO PLAZO, PREVIAMENTE SE AGREGÓ EL PRC DIRECTAMENTE A LA COLA EXIT, sacándolo primero de la cola desde donde se encuentra actualmente, haciendo actualizado ya su ctx en caso de corresponer Y SE MANEJA EL PASO A PASO DESDE ESTE HILO -----
     1. NEW: se libera memoria, se pasa a estado EXIT
     2. READY:  se libera memoria y recursos utilizados por el proceso (en caso de tenerlos), se aumenta un grado de multiprogramación, se pasa a estado EXIT
-    3. RUNNING: se libera memoria, recursos utilizados por el proceso (en caso de tenerlos), se aumenta un grado de multiprogramacion, se pasa a estado EXIT
+    3. EXEC: se libera memoria, recursos utilizados por el proceso (en caso de tenerlos), se aumenta un grado de multiprogramacion, se pasa a estado EXIT
     4. BLOCKED: se lo saca de la cola desde donde esté bloqueado (analizar si ese puntero a cola se guarda en el pcb), se libera memoria y recursos, ¿se aumenta grado de multiprogramacion?, se pasa a estado EXIT
     5. EXIT: no se hace nada, ya está en EXIT...     
 
@@ -962,9 +962,9 @@ void *planificar_all_to_exit(void *args){
                 sem_post(&mutex_planificacion_pausada[3]);
                 break;
             case READY:
-            case RUNNING:
+            case EXEC:
             case BLOCKED:
-                // ya desalojó correctamente desde donde correspondía (en caso de estado RUNNING)
+                // ya desalojó correctamente desde donde correspondía (en caso de estado EXEC)
                 op_code estado_actual = proceso_exit->estado;
                 liberar_recursos(proceso_exit); // puede asignar procesos a READY (BLOCKED -> READY) => va antes de liberar el grado de multiprogramación: (BLOCKED -> READY) > (NEW -> READY)
                 liberar_proceso_en_memoria(proceso_exit->pid);// TODO: libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!

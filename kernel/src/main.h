@@ -10,7 +10,7 @@ typedef void (*fc_puntero)(); // PUNTERO A FUNCION
 typedef enum {
     NEW, 
     READY, 
-    RUNNING, 
+    EXEC, 
     BLOCKED, 
     EXIT
 } e_estado_proceso; // ESTADOS PROCESOS
