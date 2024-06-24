@@ -50,11 +50,11 @@ typedef struct{
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-extern void* memoria;   // el "espacio de usario", la "memoria real"
+extern void* memoria[];   // el "espacio de usario", la "memoria real"
 extern t_lista_tablas *lista_tablas;
 extern uint32_t tid; //contador para el TABLE IDENTIFICATOR jaja
 
-extern t_list* bitmap_frames_libres; //"bitmap" de paginas cargadas
+extern t_list* bitmap_frames_libres; // "bitmap" de paginas cargadas
 extern t_list* lista_procesos; //lista de procesos con sus respectivas listas de paginas
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -99,3 +99,13 @@ bool pagina_presente(t_pagina); //consulta pagina cargada en memoria
 t_frame* consulta_marco(t_pagina); //entra pagina sale puntero al marco??
 int buscar_marco_libre();
 void remover_y_eliminar_elementos_de_lista(t_list* lista_original);
+
+
+
+/*          AUXILIARES PARA RESIZE           */
+
+int cant_frames_libres();
+t_list* lista_frames_libres();
+
+bool suficiente_memoria(int);
+bool suficientes_frames(int);
