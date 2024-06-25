@@ -1,11 +1,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <utils/hello.h>
+#include "paginacion.h" 
 #include "main.h"
-#include "paginacion.h" // LOS H YA LLAMAN A LAS DEFINICIONES DE SUS PROPIOS ARCHIVO C!
 #include <commons/temporal.h>
 
-config_struct config;
 pthread_t thread_memoria;
 
 int main(int argc, char *argv[]){
@@ -15,6 +14,8 @@ int main(int argc, char *argv[]){
     cargar_config_struct_MEMORIA(archivo_config);
     logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
     decir_hola("Memoria");
+    
+    init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
 
     // ------ INICIALIZACIÓN SERVIDOR + HILO ESCUCHA ------ //
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
@@ -28,7 +29,6 @@ int main(int argc, char *argv[]){
 
     pthread_join(thread_memoria, NULL);
 
-    // init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
 
     log_destroy(logger);
     config_destroy(archivo_config);
@@ -75,9 +75,13 @@ void *atender_cliente(void *cliente){
             char* path  = buffer_read_string(buffer_path, &longitud_path);
             path[strcspn(path, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
 
-            // crear_proceso(pid_iniciar, path); 
-            log_debug(logger, "CREE EL PROCESO");
-            // TODO: DEVUELVE A KERNEL MENSAJE EXITOSO EN CASO DE QUE SE HAYA CREADO CORRECTAMENTE EL PROCESO 
+            crear_proceso(pid_iniciar, path, longitud_path); 
+            op_code respuesta_kernel = PROCESO_CREADO; // si todo fue ok enviar PROCESO_CREADO para que kernel pueda continuar con su planificacion
+            ssize_t bytes_enviados = send(cliente_recibido, &respuesta_kernel, sizeof(respuesta_kernel), 0);
+            if (bytes_enviados == -1) {
+                log_error(logger, "Error enviando el dato");
+                exit(EXIT_FAILURE);
+            }
         break;
         case MOV_IN:
             // TODO: leer buffer
@@ -102,7 +106,7 @@ void *atender_cliente(void *cliente){
             t_sbuffer* buffer_eliminar = cargar_buffer(cliente_recibido);
             uint32_t pid_eliminar = buffer_read_uint32(buffer_eliminar);
             log_debug(logger, "se mando a eliminar/liberar proceso %u", pid_eliminar);
-            // eliminar_proceso(pid); 
+            eliminar_proceso(pid_eliminar); 
         break;
         case LEER_PROCESO:
             // 1. comienza a contar el timer para calcular retardo en rta a CPU
@@ -115,14 +119,21 @@ void *atender_cliente(void *cliente){
 
             log_debug(logger, "Recibi para leer del proceso %u, la prox INST desde PC %u", pid_proceso, pc_proceso);
 
-            char nombreArchivo[256];
-            snprintf(nombreArchivo, sizeof(nombreArchivo), "src/procesos/%d.txt", pid_proceso); // PROVISORIO!
+            t_pcb* proceso_memoria = get_element_from_pid(pid_proceso);
+            if(!proceso_memoria) {
+                log_error(logger, "no existe dicho proceso en el pcb de memoria");
+                break;
+            }
+            char* path_instrucciones_proceso = malloc(strlen(config.path_instrucciones) + strlen(proceso_memoria->path_proceso) + 1);
+            strcpy(path_instrucciones_proceso, config.path_instrucciones);
+            strcat(path_instrucciones_proceso, proceso_memoria->path_proceso);
 
+            log_debug(logger, "este es el path absoluto del proceso %s", path_instrucciones_proceso);
             int lineaActual = 0, lee_instruccion = 0;
 
             char *instruccion = NULL;
             size_t len = 0;
-            FILE *script = fopen(nombreArchivo, "r");
+            FILE *script = fopen(path_instrucciones_proceso, "r");
 
             if (script == NULL){
                 log_error(logger, "No se encontro ningun archivo con el nombre indicado...");
@@ -158,6 +169,7 @@ void *atender_cliente(void *cliente){
                 } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
                 free(instruccion);
             }
+            free(path_instrucciones_proceso);
         break;
         case -1:
             log_error(logger, "Cliente desconectado.");
@@ -171,23 +183,9 @@ void *atender_cliente(void *cliente){
     }
 }
 
-void crear_proceso(uint32_t pid, char* path){
-    uint32_t tid = create_tabla_paginas(pid);
-    add_psuedo_pcb(pid, tid);
-    // TODO: agregar a t_tabla_paginas el path y ya con eso no haría falta t_pseudo_pcb
-}
-
-void eliminar_proceso(uint32_t pid){
-    free_tabla_paginas(pid); 
-    remove_from_bitmap(pid);  
-    remove_from_lista_procesos(pid);
-}
 
 ////// funciones memoria
-
-void aplicar_retardo(){
-    sleep(config.retardo_respuesta);    // asi nomas???
-}
+// crear_proceso y eliminar_proceso quedaron definidos en paginacion.c
 
 // RESIZE
 

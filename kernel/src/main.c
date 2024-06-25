@@ -923,7 +923,8 @@ void *planificar_new_to_ready(void *archivo_config)
         buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
 
         cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
-        // TODO: ACÁ MEMORIA DEBERÍA DEVOLVER ALGO PARA SABER SI SE CREÓ OK!!!!!!!!
+        int recibir_respuesta_memoria = recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
+        //if(recibir_respuesta_memoria != PROCESO_CREADO) // TODO: PODRÍA NO PODER CREARSE EL PROCESO? 
 
         // 3. Envía a READY
         primer_elemento->estado = READY;
@@ -1156,8 +1157,7 @@ void liberar_proceso_en_memoria(uint32_t pid_proceso){
     );
     buffer_add_uint32(buffer_memoria, pid_proceso);
 
-
     cargar_paquete(conexion_memoria, ELIMINAR_PROCESO, buffer_memoria); 
-    log_debug(logger, "envio pid, a liberar, a memoria");
+    log_debug(logger, "envio proceso a liberar a memoria");
 } //FUNCION liberar_memoria_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
 // ------------- FIN FUNCIONES PARA MEMORIA -------------

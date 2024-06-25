@@ -330,7 +330,7 @@ void io_stdin_read(uint32_t direc, uint32_t size, int socket){
     while (ok == 0){ // este while tal vez esta de mas
         int op_code = recibir_operacion(socket);
         if(op_code == IO_MEMORY_DONE){//TODO: esto no es un semaforo? podriamos hacer un semaforo que se comunique entre memoria-IO?
-            ok = buffer_read_int(buffer_memoria) //?
+            ok = buffer_read_int(buffer_memoria); //?
             if(ok == -1){ //?
                 log_error(logger, "Error al cargar valor en memoria");
                 exit(EXIT_FAILURE);
@@ -358,7 +358,7 @@ void io_stdout_write(uint32_t direc, uint32_t size, int socket){
         + (uint32_t)strlen(output) + sizeof(uint32_t) // string que dara memoria
     );
 
-    buffer_add_uint32(direc);
+    buffer_add_uint32(buffer_memoria, direc);
     //TODO: aca no va IO_STDOUT_WRITE, sino la instruccion que corresponda al cargado de datos en memoria (que puede ser esta misma si quieren)
     cargar_paquete(socket, IO_STDOUT_WRITE, buffer_memoria);
 
@@ -372,7 +372,7 @@ void io_stdout_write(uint32_t direc, uint32_t size, int socket){
         if(op_code == IO_MEMORY_DONE){ //TODO: esto no es un semaforo? podriamos hacer un semaforo que se comunique entre memoria-IO?
             ok = buffer_read_int(buffer_memoria); //?
             direc = buffer_read_uint32(buffer_memoria); //lo avanzo uno pero en realidad no me importa obtener este valor
-            output = buffer_read_string(buffer_memoria, size); 
+            output = buffer_read_string(buffer_memoria, &size); 
 
             if(ok == -1){ //?
                 log_error(logger, "Error al descargar el valor de memoria");

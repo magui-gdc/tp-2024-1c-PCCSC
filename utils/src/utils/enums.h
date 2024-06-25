@@ -7,6 +7,7 @@ typedef enum
 	DATOS_MEMORIA, // cpu - memoria
 	PAQUETE,
 	INICIAR_PROCESO, // kernel - memoria
+	PROCESO_CREADO,
 	ELIMINAR_PROCESO, // kernel - memoria
 	INSTRUCCION, // memoria - cpu
 	EJECUTAR_PROCESO, // kernel - cpu
