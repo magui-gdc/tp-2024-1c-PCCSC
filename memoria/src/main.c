@@ -192,9 +192,35 @@ void aplicar_retardo(){
 // RESIZE
 
 void resize_proceso(uint32_t pid, int new_size){
+    
+    int tamanio_proceso = size_actual(pid);
+    int tamanio_disponible_sin_agregar_paginas = cant_paginas_proceso(pid);
+    
+    int diferencia_tamanio = tamanio_proceso - new_size;
+    int tamanio_libre_ultima_pagina = tamanio_disponible_sin_agregar_paginas - tamanio_proceso;
+
+    if(diferencia_tamanio >= 0){
+        
+        //disminuir
+    } else {
+        //aumentar
+    }
+
+    if (new_size > tamanio_disponible_sin_agregar_paginas*config.tam_pagina){
+        int new_size_a_paginas = (int)ceil((float)new_size / config.tam_pagina);
+        int paginas_requeridas = tamanio_disponible_sin_agregar_paginas - new_size_a_paginas;
+        //se agrega nueva pagina
+    } else {
+        //se eliminan las paginas
+    }
+    
+
+
     // int size_resultante = size_actual - new_size 
     // if size_resultante > 0 -> es para reducir... else if size_resultante < 0 -> es para ampliar el proceso.. else nada.
 }
+
+
 
 // AMPLIACION 
 

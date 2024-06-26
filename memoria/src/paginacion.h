@@ -20,10 +20,9 @@ typedef struct{ // para el "bitmap" de frames libres
     bool presence;
 } t_frame;
 
-typedef struct{         // y donde van los datos ahre??????
-    t_frame* frame;   //checkear tipo de dato
-    uint32_t offset;  //checkear tipo de dato
-    //agregar un PAGE ID???
+typedef struct{       
+    void* frame;
+    int offset;  //asumo que es bits, es para la traduccion???
     bool presence;
 } t_pagina;
 
@@ -82,6 +81,9 @@ void remove_from_lista_procesos(uint32_t); //saca proceso de lista de procesos c
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 /*          AUXILIARES            */
+
+void* frame_libre(); //busca y devuelve el primer frame libre para asignar a una pagina
+
 uint32_t get_tid(uint32_t); //dado un pid devuelvo el tid asociado
 
 /*
@@ -89,14 +91,7 @@ t_tabla_paginas get_tabla_from_tid(uint32_t);
 t_frame* get_frame_bitmap_from_pid(uint32_t);
 t_pseudo_pcb* get_pseudo_pcb_from_pid(uint32_t);
 */
-
 void* get_element_from_pid (t_list*, uint32_t);  //la abstraccion de todas las de arriba, get un elemento de una tabla por el pid
-
-
-//cosas SUS
-bool pagina_valida(t_pagina); 
-bool pagina_presente(t_pagina); //consulta pagina cargada en memoria
-t_frame* consulta_marco(t_pagina); //entra pagina sale puntero al marco??
 int buscar_marco_libre();
 void remover_y_eliminar_elementos_de_lista(t_list* lista_original);
 
@@ -104,7 +99,11 @@ void remover_y_eliminar_elementos_de_lista(t_list* lista_original);
 
 /*          AUXILIARES PARA RESIZE           */
 
-int cant_frames_libres();
+int size_actual(uint32_t pid){ //devuelve tam en bites ocupados 
+int espacios_ocupados_en_pagina(t_pagina* pagina){ //devuelve cuantos bits estan siendo ocupados en el frame que apunta la pagina dada
+int memoria_usada(uint32_t pid); //devuelve los bites ocupados en toda la memoria por todos los procesos
+
+int cant_frames_libres(); 
 t_list* lista_frames_libres();
 
 bool suficiente_memoria(int);

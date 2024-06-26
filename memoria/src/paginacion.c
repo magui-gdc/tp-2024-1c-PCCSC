@@ -101,7 +101,8 @@ void create_pagina(t_list *tabla_paginas){
         exit(EXIT_FAILURE);
     }
 
-    // pagina_aux->frame = -1; no es de time frame el -1
+    pagina_aux->frame = frame_libre();
+    if (pagina_aux->frame == NULL) ? exit(EXIT_FAILURE);
     pagina_aux->offset = 0;
     pagina_aux->presence = false;
 
@@ -156,6 +157,16 @@ void remove_from_lista_procesos(uint32_t pid){
 
 /*          AUXILIARES            */
 
+void* frame_libre(){
+    for(int i = 0, i<config.tam_memoria/config.tam_pagina, i++){
+        if(memoria[i] == NULL){
+            return &memoria[i];
+        }
+    }
+    log_error(logger, "No hay Frames libres!! un beso");
+    return NULL;
+}
+
 uint32_t get_tid(uint32_t pid){
     bool comparar_pid(void *elemento){
         t_tabla_paginas *tabla = (t_tabla_paginas *)elemento;
@@ -167,27 +178,28 @@ uint32_t get_tid(uint32_t pid){
 }
 
 void* get_element_from_pid(t_list* lista, uint32_t pid_buscado){ //ABSTRACCION!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    /*
+    
     bool comparar_pid(void *elemento){
-        void *frame = (void *)elemento;
-        return elemento->pid == pid_buscado;
+        void *elemento_ = (void *)elemento;
+        return elemento_->pid == pid_buscado;
     }
     void* elemento = (void*)list_find(lista, comparar_pid);
 
     return elemento; // si no funciona pasarlo como puntero a funcion
-    */ // TODO: FALTA ACLARAR EL TIPO DE LO QUE DEVUELVO PARA PODER USARLO EN EL COMPARAR_PID: no void*
+    // TODO: FALTA ACLARAR EL TIPO DE LO QUE DEVUELVO PARA PODER USARLO EN EL COMPARAR_PID: no void*
 }
 
-/*
-t_tabla_paginas* get_tabla_from_tid(uint32_t tid){
-    bool comparar_tid(void *elemento){
+
+t_tabla_paginas* get_tabla_from_pid(uint32_t pid){
+    bool comparar_pid(void *elemento){
         t_tabla_paginas *tabla = (t_tabla_paginas *)elemento;
-        return tabla->tid == tid;
+        return tabla->pid == pid;
     }
-    t_tabla_paginas* tabla_encontrada = (t_tabla_paginas*)list_find(lista_tablas, comparar_tid);
+    t_tabla_paginas* tabla_encontrada = (t_tabla_paginas*)list_find(lista_tablas, comparar_pid);
 
     return tabla_encontrada; // si no funciona pasarlo como puntero a funcion
 }
+
 t_frame* get_frame_bitmap_from_pid(uint32_t pid_buscado){
 
     bool comparar_pid(void *elemento){
@@ -198,6 +210,8 @@ t_frame* get_frame_bitmap_from_pid(uint32_t pid_buscado){
 
     return frame_encontrado; // si no funciona pasarlo como puntero a funcion
 }
+
+/*
 t_pseudo_pcb* get_pseudo_pcb_from_pid(uint32_t pid_buscado){
 
     bool comparar_pid(void *elemento){
@@ -207,8 +221,10 @@ t_pseudo_pcb* get_pseudo_pcb_from_pid(uint32_t pid_buscado){
     t_pseudo_pcb* pcb_encontrado = (t_pseudo_pcb*)list_find(lista_procesos, comparar_pid);
 
     return pcb_encontrado; // si no funciona pasarlo como puntero a funcion
-}
-*/
+}*/
+
+//-----------------------------------------------------------------------
+//-----------------------------------------------------------------------
 
 void remover_y_eliminar_elementos_de_lista(t_list* lista_original){
     t_list_iterator* iterator = list_iterator_create(lista_original);
@@ -238,9 +254,33 @@ t_list* lista_frames_libres(){
 
 
 bool suficiente_memoria(int memoria_solicitada){
-    return memoria_solicitada < config.tam_memoria;
+    return memoria_solicitada < cant_frames_libres()*config.tam_pagina;
 }
 
 bool suficientes_frames(int cant_paginas_requeridas){
     return cant_paginas_requeridas <= cant_frames_libres();
+}
+
+int cant_paginas_proceso(uint32_t pid){
+    t_tabla_paginas* tabla_proceso = get_tabla_from_pid(pid);
+    return tablaproceso->cant_paginas;
+}
+
+int size_actual(uint32_t pid){
+    t_tabla_paginas* tabla_proceso = get_tabla_from_pid(pid);
+    int cantidad_paginas_completas = tablaproceso->cant_paginas -1;
+    t_pagina* ultima_pagina = list_slice(t_list* tabla_proceso->paginas, cantidad_paginas_completas, 1);
+    int espacio_ocupado = cantidad_paginas_completas * config.tam_pagina + espacios_ocupados_en_pagina(ultima_pagina_del_proceso);
+    return espacio_ocupado;
+} //ASUMIMOS QUE NO HAY FRAGMENTACION INTERNA EN OTRAS PAGINAS MAS QUE EN LA ULTIMA
+
+int espacios_ocupados_en_pagina(t_pagina* pagina){
+    uint8_t* frame = (uint8_t*)pagina->frame;
+    int cantidad = 0;
+    for(int i=0; i< config.tam_pagina; i++){
+        if(frame[i] =! 0){
+            cantidad++;
+        }
+    }
+    return cantidad;
 }
