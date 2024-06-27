@@ -32,6 +32,7 @@ int main(int argc, char *argv[]){
 
     log_destroy(logger);
     config_destroy(archivo_config);
+    bitarray_destroy(bitmap_marcos_libres);
 
     return EXIT_SUCCESS;
 }
@@ -195,17 +196,13 @@ void resize_proceso(uint32_t pid, int new_size){
 }
 
 // AMPLIACION 
-
 void ampliar_proceso(uint32_t pid, int new_size){
     
+    /*
     int cant_paginas_requeridas = new_size/config.tam_memoria;
-    if(!suficiente_memoria(new_size) || !suficientes_frames(cant_paginas_requeridas)){
+    if(!suficiente_memoria(new_size) || ! suficientes_marcos(cant_paginas_requeridas)){
         log_error(logger, "No hay suficiente espacio para este proceso");
         exit(OUT_OF_MEMORY);
-    }
-    else{
-        
-
-    }
+    }*/
 }
 

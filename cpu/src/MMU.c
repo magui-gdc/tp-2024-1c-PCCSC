@@ -1,7 +1,6 @@
 #include "MMU.h"
 #include <math.h>
 
-extern t_list* lista_TLB; // tamanio TAM_MEMORIA/TAM_PAGINA
 extern int TAM_MEMORIA;
 extern int TAM_PAGINA;
 
