@@ -27,8 +27,8 @@ int main(int argc, char* argv[]) {
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
 
     tlb_list = list_create();
-
     list_interrupciones = list_create();
+
     sem_init(&mutex_lista_interrupciones, 0, 1);
 
     decir_hola("CPU");
@@ -108,6 +108,7 @@ int main(int argc, char* argv[]) {
 
     //Limpieza
     log_destroy(logger);
+    list_destroy(tlb_list);
 	config_destroy(archivo_config);
     liberar_conexion(conexion_memoria);
 
@@ -269,24 +270,50 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *registro = tokens[1]; 
             char *proxInstruccion = tokens[2]; 
             jnz(registro, proxInstruccion);
-        } else if (strcmp(comando, "MOV_IN") == 0){
-            // TODO: mandas a memoria el MOV_IN con los valores (SEND)
-            // cargar_paquete(conexion_memoria, MOV_IN, *buffer_ya_cargado);
-            // int recibir_operacion = recibir_operacion(conexion_memoria); // bloqueando
-            // switch(recibir_operacion)
-            // CONTINUAR => no hace nada
-            // SI ES CUALQUIER MENSAJE QUE REQUIERA DESALOJO: además de mandarle de mandarle a kernel:
-            /*
-            t_sbuffer *buffer_desalojo = NULL;
-            desalojo_proceso(&buffer_desalojo, conexion_kernel, recibir_operacion);
-            */
-           // TENES QUE CARGAR LAS VARIABLES DE DESALOJO DE CPU
-           /*
-           seguir_ejecucion = 0;
-            desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-           */
+        } else if (strcmp(comando, "MOV_OUT") == 0){
+            char* registro_direccion = tokens[1];
+            char* registro_dato = tokens[2]; // donde toma el dato para escribir
+            uint32_t direccion_logica = obtener_valor_registro(registro_direccion);
+            uint32_t bytes_a_escribir = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
+            uint32_t valor_a_escribir = obtener_valor_registro(registro_dato);
+
+            // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
+            t_sbuffer* buffer_direcciones_fisicas = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
             
-            int esperar_operacion = recibir_operacion(conexion_memoria); // bloqueando
+            cargar_paquete(conexion_memoria, MOV_OUT, buffer_direcciones_fisicas);
+            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            /* analizar si le puede mandar algún error
+            switch (recibir_operacion_memoria){
+            case ERROR_MEMORIA: 
+                seguir_ejecucion = 0;
+                desalojo = 1;
+                break;
+            default:
+                break;
+            }
+            */
+        } else if (strcmp(comando, "MOV_IN") == 0){
+            char* registro_dato = tokens[1]; // donde va a almacenar el valor que lee de memoria
+            char* registro_direccion = tokens[2];
+            uint32_t direccion_logica = obtener_valor_registro(registro_direccion);
+            uint32_t bytes_a_leer = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
+
+            // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
+            t_sbuffer* buffer_direcciones_fisicas = mmu("LEER", direccion_logica, bytes_a_leer, 0);
+            
+            cargar_paquete(conexion_memoria, MOV_IN, buffer_direcciones_fisicas);
+            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            switch (recibir_operacion_memoria){
+                /* analizar si le puede mandar algún error
+                    case ERROR_MEMORIA: 
+                        seguir_ejecucion = 0;
+                        desalojo = 1;
+                    break;
+                */
+            case MOV_IN: 
+                // TODO: acá le va a responder con un buffer cargado con el valor leído de memoria, y la idea es que se lo guarde en el registro de la instruccion 
+                break;
+            }
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
@@ -546,6 +573,89 @@ void* recibir_interrupcion(void* conexion){
         }
     }
     return NULL;
+}
+
+t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
+    int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
+    int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
+    
+    int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA); 
+    t_sbuffer* buffer_direcciones_fisicas = buffer_create(
+        sizeof(int) + // cantidad de peticiones
+        sizeof(uint32_t) * cantidad_peticiones_memoria + // numero/s marco por peticion
+        sizeof(int) * cantidad_peticiones_memoria + // desplazamiento/s por peticion
+        sizeof(uint32_t) * cantidad_peticiones_memoria // bytes a leer/escribir por peticion
+    );
+
+    if(strcmp(operacion, "ESCRIBIR") == 0) {
+    /* // TODO: este dato debería ser un VOID* ¿? ANALIZAR (dejo comentado por el sizeof)
+        uint32_t new_size = buffer_direcciones_fisicas->size + sizeof(uint32_t) * cantidad_peticiones_memoria; // dato a escribir por peticion
+        buffer_direcciones_fisicas->stream = realloc(buffer_direcciones_fisicas->stream, new_size);
+        buffer_direcciones_fisicas->size = new_size;
+    */
+    }
+    buffer_add_int(buffer_direcciones_fisicas, cantidad_peticiones_memoria);
+    t_tlb* entrada_tlb;
+
+    if(cantidad_peticiones_memoria == 1){
+        entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
+        if(!entrada_tlb){
+            // TODO: enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+            // TODO: agregar entrada a TLB según algoritmo de TLB
+            // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
+        } 
+        
+        buffer_add_uint32(buffer_direcciones_fisicas, entrada_tlb->marco);
+        buffer_add_int(buffer_direcciones_fisicas, desplazamiento);
+        buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion);
+        // TODO: if(strcmp(operacion, "ESCRIBIR") == 0) buffer_add_uint32(buffer_direcciones_fisicas, dato_escribir); // TODO: analizar si está bien cómo se está pasando el tipo de dato para recibirlo correctamente del otro lado (esto porque en ese parámetro se pude haber tomado un valor tanto desde registro UINT8 como UINT32): creo que se debería pasar como un void* ver ISSUE https://github.com/sisoputnfrba/foro/issues/3781
+    } else {
+        uint32_t bytes_pendientes = bytes_peticion;
+        uint32_t bytes_a_enviar_por_peticion;
+        for (int i = 0; i < cantidad_peticiones_memoria; i++){
+           if(i == 0) // en esta primera vuelta consumo el espacio restante a partir del offset de la primera página
+                bytes_a_enviar_por_peticion = TAM_PAGINA - desplazamiento; // los bytes que entran en la primera página a partir del offset dado
+           else // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
+                if(i < cantidad_peticiones_memoria)
+                    bytes_a_enviar_por_peticion = TAM_PAGINA;
+                else 
+                    bytes_a_enviar_por_peticion = bytes_pendientes;
+            
+
+            if(strcmp(operacion, "ESCRIBIR") == 0) {
+                void* datos_a_enviar;
+                // TODO: acá debería tomar del contenido de datos_escribir los primeros N (=bytes_a_enviar_por_peticion) bytes y dejar el resto almacenado para la próxima peticion de escritura
+                // todo se va a cargar en datos_a_enviar
+            }
+
+            entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
+            if(!entrada_tlb){
+                // TODO: enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+                // TODO: agregar entrada a TLB según algoritmo de TLB
+                // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
+            } 
+
+            buffer_add_uint32(buffer_direcciones_fisicas, entrada_tlb->marco);
+            buffer_add_int(buffer_direcciones_fisicas, desplazamiento);
+            buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion);
+            // TODO -> ESCRIBIR => cómo se envía datos_a_enviar según lo cargado en los pasos anteriores   
+
+            bytes_pendientes-= bytes_a_enviar_por_peticion;
+            nro_pagina++; // próxima petición a la página siguiente
+            desplazamiento = 0; // las páginas nuevas siempre parten de su offset 0
+        }
+    }
+
+    return buffer_direcciones_fisicas;
+}
+
+t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina){
+    bool comparar_pid_pagina(void *elemento){
+        t_tlb *entrada_tlb = (t_tlb *)elemento;
+        return (entrada_tlb->pid == proceso && entrada_tlb->pagina == nro_pagina);
+    }
+    t_tlb* encontrado = (t_tlb*)list_find(tlb_list, comparar_pid_pagina);
+    return encontrado; 
 }
 
 // la dejo vacía y declarada porque, a pesar de que no la requeramos acá, como importamos el utilsServer.c necesita de una defición de esta función, hay que ver qué conviene más adelante

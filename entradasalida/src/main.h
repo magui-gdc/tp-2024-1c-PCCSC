@@ -71,6 +71,8 @@ t_io* inicializar_io(char*, t_config*);
 
 IO_class selector_carga_config(t_config*);
 
+void responder_kernel(int socket_k);
+
 ////// DIALFS
 
 // FUNCIONES PRINCIPALES
@@ -86,10 +88,10 @@ char* obtener_path();
 
 // INSTRUCCIONES DE IO
 void io_gen_sleep(uint32_t work_u);
-void io_stdin_read(char* reg_d, uint32_t reg_s);
-void io_stdout_write(char* reg_d, uint32_t reg_s);
-void io_fs_create(char* arch);
-void io_fs_delete(char* arch);
-void io_fs_truncate(char* arch, uint32_t reg_s);
-void io_fs_write(char* arch, char* reg_d, uint32_t reg_s, uint32_t reg_p);
-void io_fs_read(char* arch, char* reg_d, uint32_t reg_s, uint32_t reg_p); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero
+void io_stdin_read(uint32_t reg_d, uint32_t reg_s, int socket_m);
+void io_stdout_write(uint32_t reg_d, uint32_t reg_s, int socket_m);
+void io_fs_create(char* arch, int socket_m);
+void io_fs_delete(char* arch, int socket_m);
+void io_fs_truncate(char* arch, uint32_t reg_s, int socket_m);
+void io_fs_write(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m);
+void io_fs_read(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero

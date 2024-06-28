@@ -8,10 +8,6 @@ PATH_INSTRUCCIONES=/home/utnso/scripts-pruebas
 RETARDO_RESPUESTA=1000
 */
 
-void crear_proceso(uint32_t,char*);
-void eliminar_proceso(uint32_t);
-void aplicar_retardo();
-
 
 //  FUNCIONES ACCESO A ESPACIO USUARIO
 /*
@@ -30,5 +26,5 @@ char *leer_memoria(int, int, uint32_t);
 
 */
 
-void ampliar_proceso(uint32_t);
+void ampliar_proceso(uint32_t pid, int new_size);
 

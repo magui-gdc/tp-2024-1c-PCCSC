@@ -125,7 +125,7 @@ void set(char* registro, char* valor){
     */
 }
 
-void MOV_IN (char* registroDato, char* registroDireccion){
+void mov_in_function(char* registroDato, char* registroDireccion){
 
     if(obtenerTipo(registroDato) == obtenerTipo(registroDireccion)){
     
@@ -164,8 +164,8 @@ void MOV_IN (char* registroDato, char* registroDireccion){
     }
 }// Lee el valor de memoria correspondiente a la Dirección Lógica que se encuentra en el Registro Dirección y lo almacena en el Registro Datos.
 
-void MOV_OUT (char* registroDireccion, char* registroDato){
-    MOV_IN(registroDireccion, registroDato);
+void mov_out_function(char* registroDireccion, char* registroDato){
+    mov_in_function(registroDireccion, registroDato);
 }
 
 void SUM (char* registroDireccion, char* registroOrigen){

@@ -14,10 +14,7 @@ void log_cambio_estado_proceso(t_log* logger, uint32_t pid, char* estado_anterio
 }
 
 void log_creacion_destruccion_de_tabla_de_pagina(t_log* logger, uint32_t pid, int tamanio){
-    char* mensaje = (char*)malloc(128);
-    sprintf(mensaje, "PID: %d - Tamaño: %d", pid, tamanio);
-    log_info(logger, "%s", mensaje);
-    free(mensaje);
+    log_info(logger, "PID: %u - Tamaño: %d", pid, tamanio);
 };
 
 

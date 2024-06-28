@@ -7,6 +7,7 @@ typedef enum
 	DATOS_MEMORIA, // cpu - memoria
 	PAQUETE,
 	INICIAR_PROCESO, // kernel - memoria
+	PROCESO_CREADO,
 	ELIMINAR_PROCESO, // kernel - memoria
 	INSTRUCCION, // memoria - cpu
 	EJECUTAR_PROCESO, // kernel - cpu
@@ -20,6 +21,7 @@ typedef enum
 	NO_FINALIZADO,
     DESALOJAR_PROCESO,
 	IO_GEN_SLEEP, // kernel - io (16)
+	IO_MEMORY_DONE, // memoria - io
     IO_STDIN_READ, // kernel - io
     IO_STDOUT_WRITE, // kernel - io
 	IO_FS_WRITE, // kernel - io
