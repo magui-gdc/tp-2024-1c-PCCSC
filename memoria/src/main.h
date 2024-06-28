@@ -8,23 +8,19 @@ PATH_INSTRUCCIONES=/home/utnso/scripts-pruebas
 RETARDO_RESPUESTA=1000
 */
 
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-//  FUNCIONES ACCESO A ESPACIO USUARIO
-/*
-    LEER MEMORIA
-    devolver el valor que se encuentra a partir de la dirección física pedida.
-*/
+/*          ACCESO ESPACIO USUARIO            */
 
-char *leer_memoria(int, int, uint32_t);
+#define ERROR
+#define OK
+void* leer_memoria(void* dir_fisica, int tam_lectura);
+int escribir_memoria(char* dir_fisica, void* dato);
 
-//  AJUSTAR TAMANIO DE PROCESO
-/*
-    Ampliación de un proceso
-    Se deberá ampliar el tamaño del proceso al final del mismo, pudiendo solicitarse múltiples páginas. 
-    Es posible que en un punto no se puedan solicitar más marcos ya que la memoria se encuentra llena, 
-    por lo que en ese caso se deberá contestar con un error de Out Of Memory.
 
-*/
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
+/*          RESIZE            */
 
 void ampliar_proceso(uint32_t pid, int new_size);
 

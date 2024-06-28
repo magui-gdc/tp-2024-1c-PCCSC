@@ -192,38 +192,37 @@ void *atender_cliente(void *cliente){
 
 void resize_proceso(uint32_t pid, int new_size){
     
-    int tamanio_proceso = size_actual(pid);
-    int tamanio_disponible_sin_agregar_paginas = cant_paginas_proceso(pid);
+    int max_sin_agregar_pag = cant_paginas_proceso(pid) * config.tam_pagina;
+    int min_sin_agregar_pag = max_sin_agregar_pag - config.tam_pagina;
     
-    int diferencia_tamanio = tamanio_proceso - new_size;
-    int tamanio_libre_ultima_pagina = tamanio_disponible_sin_agregar_paginas - tamanio_proceso;
-
-    if(diferencia_tamanio >= 0){
-        
-        //disminuir
-    } else {
-        //aumentar
+    int new_size_a_paginas = (int)ceil((float)new_size / config.tam_pagina);
+    
+    if (new_size > max_sin_agregar_pag){
+        int paginas_a_aumentar = new_size_a_paginas - max_sin_agregar_pag;
+        ampliar_proceso(pid, paginas_a_aumentar);
+    }
+    if (new_size < min_sin_agregar_pag){
+        int paginas_a_reducir = min_sin_agregar_pag - new_size_a_paginas;
+        reducir_proceso(pid, paginas_a_reducir);
     }
 
-    if (new_size > tamanio_disponible_sin_agregar_paginas*config.tam_pagina){
-        int new_size_a_paginas = (int)ceil((float)new_size / config.tam_pagina);
-        int paginas_requeridas = tamanio_disponible_sin_agregar_paginas - new_size_a_paginas;
-        //se agrega nueva pagina
-    } else {
-        //se eliminan las paginas
-    }
-    
-
-
-    // int size_resultante = size_actual - new_size 
-    // if size_resultante > 0 -> es para reducir... else if size_resultante < 0 -> es para ampliar el proceso.. else nada.
 }
 
 
 
 // AMPLIACION 
-void ampliar_proceso(uint32_t pid, int new_size){
+void ampliar_proceso(uint32_t pid, int cantidad){
+    t_pcb* proceso = get_element_from_pid(pid);
     
+    //CHECKEAR MARCOS DISPONIBLES
+    uint32_t marco_libre = primer_marco_libre(); // un solo marco? puede ser que necesite mas?
+
+    for(int i = 0; i < cantidad; i++){
+        //CREAR PAGINA
+        create_pagina(proceso->tabla_paginas);
+        //ACTUALIZAR BITMAP
+        bitarray_set_bit(bitmap_marcos_libres,???)// como se cual es el marco??
+    }
     /*
     int cant_paginas_requeridas = new_size/config.tam_memoria;
     if(!suficiente_memoria(new_size) || ! suficientes_marcos(cant_paginas_requeridas)){
@@ -232,3 +231,28 @@ void ampliar_proceso(uint32_t pid, int new_size){
     }*/
 }
 
+void reducir_proceso(uint32_t pid, int cantidad){
+    for(int i = 0; i < cantidad; i++){       
+        //LIBERAR PAGINA y eliminarla.
+        
+        //ACTUALIZAR BITMAP
+        proceso->cant_paginas--;
+    }
+}
+    
+    
+/*          ACCESO ESPACIO USUARIO            */
+
+void* leer_memoria(void* dir_fisica, int tam_lectura){
+    void* dato;
+    memcpy(dato, dir_fisica, tam_lectura);
+    return dato;
+}
+
+int escribir_memoria(char* dir_fisica, void* dato){
+    memcpy(dir_fisica,dato,sizeof(dato));
+
+    dato_escrito = leer_memoria(dir_fisica,sizeof(dato));
+    if(dato_escrito==NULL) ? return ERROR;
+    else return OK;
+}

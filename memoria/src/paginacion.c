@@ -14,11 +14,25 @@ config_struct config;
 
 void init_memoria(){
     size_t cantidad_marcos_totales = config.tam_memoria / config.tam_pagina;
+
     memoria = (void*)calloc(cantidad_marcos_totales, config.tam_pagina);
-    init_bitmap_marcos(cantidad_marcos_totales);
+    if (!memoria) {
+        log_error(logger,"Error al inicializar la memoria");
+        exit(EXIT_FAILURE);
+    }
+
+    //init_bitmap_marcos(cantidad_marcos_totales);
+    bitarray_create(bitmap_marcos_libres, cantidad_marcos_totales);
+
     lista_pcb_tablas_paginas = list_create();
+    if (!lista_pcb_tablas_paginas) {
+        log_error(logger, "Error al crear la lista de PCB y tablas de páginas");
+        free(memoria);
+        exit(EXIT_FAILURE);
+    }
 }
 
+/*
 void init_bitmap_marcos(size_t cantidad_marcos_totales){
     size_t tamanio_bitmap = cantidad_marcos_totales / 8; // porque necesitamos el valor en BYTES
     if (cantidad_marcos_totales % 8 != 0) {
@@ -26,20 +40,26 @@ void init_bitmap_marcos(size_t cantidad_marcos_totales){
     }
     char *bitmap = malloc(tamanio_bitmap); // tamanio en bytes que se va a reservar
     if (!bitmap) {
-        perror("Error en la creación del Bitmap de Marcos Libres");
+        log_error(logger,"Error en la creación del Bitmap de Marcos Libres");
         exit(EXIT_FAILURE);
     }
 
     bitmap_marcos_libres = bitarray_create(bitmap, tamanio_bitmap);
+    if (!bitmap_marcos_libres) {
+        log_error(logger, "Error al crear el bitarray de marcos libres");
+        free(bitmap);
+        exit(EXIT_FAILURE);
+    }
 
     // inicializa todos los bits a 0 (todos los marcos están libres)
     for (size_t i = 0; i < cantidad_marcos_totales; i++) {
         bitarray_clean_bit(bitmap_marcos_libres, i);
     }
 }
+*/
 
 void crear_proceso(uint32_t pid, char* path, uint32_t length_path) {
-    t_pcb* proceso_memoria = malloc(sizeof(proceso_memoria));
+    t_pcb* proceso_memoria = malloc(sizeof(t_pcb));
     if (!proceso_memoria){
         log_error(logger, "Error en la asignación de memoria para proceso en memoria.");
         exit(EXIT_FAILURE);
@@ -47,15 +67,29 @@ void crear_proceso(uint32_t pid, char* path, uint32_t length_path) {
 
     proceso_memoria->pid = pid;
     proceso_memoria->path_proceso = malloc(length_path + 1);
+    if (!proceso_memoria->path_proceso) {
+        log_error(logger, "Error en la asignación de memoria para path del proceso.");
+        free(proceso_memoria);
+        exit(EXIT_FAILURE);
+    }
+
     strcpy(proceso_memoria->path_proceso, path);
+    
     proceso_memoria->tabla_paginas = list_create();
+    if (!proceso_memoria->tabla_paginas) {
+        log_error(logger, "Error en la creación de la lista de páginas del proceso.");
+        free(proceso_memoria->path_proceso);
+        free(proceso_memoria);
+        exit(EXIT_FAILURE);
+    }
+
     proceso_memoria->cant_paginas = 0;
 
     list_add(lista_pcb_tablas_paginas, proceso_memoria);
     log_creacion_destruccion_de_tabla_de_pagina(logger, pid, 0);
 }
 
-/*
+
 void create_pagina(t_list *tabla_paginas){
 
     t_pagina *pagina_aux = malloc(sizeof(t_pagina));
@@ -64,11 +98,12 @@ void create_pagina(t_list *tabla_paginas){
         exit(EXIT_FAILURE);
     }
 
-    // pagina_aux->marco = -1; no es de time marco el -1
+    pagina_aux->marco = -1; 
     pagina_aux->offset = 0;
 
-    if (list_add(tabla_paginas, pagina_aux) == -1){
-        log_error(logger, "Error en la insercion de una Pagina en la Tabla de Paginas.");
+     if (list_add(tabla_paginas, pagina_aux) == -1) {
+        log_error(logger, "Error en la inserción de una Página en la Tabla de Páginas.");
+        free(pagina_aux);  
         exit(EXIT_FAILURE);
     }
 
@@ -77,7 +112,7 @@ void create_pagina(t_list *tabla_paginas){
     list_add(tabla_paginas, pagina_aux);
     free(pagina_aux);
 }
-*/
+
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
@@ -116,6 +151,11 @@ void remover_y_eliminar_elementos_de_lista(t_list* lista_original){
     list_iterator_destroy(iterator);
 } // TODO: probarlo
 
+int get_bitman_index(void* direccion_marco){
+    uintptr_t offset = (uintptr_t)direccion_marco - (uintptr_t)memoria;
+    return offset / config.tam_pagina;
+}
+
 /*          AUXILIARES PARA RESIZE           */
 
 uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
@@ -139,6 +179,13 @@ uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
     return marcos_libres;
 }
 
+uint32_t primer_marco_libre() {
+    uint32_t *marcos_libres = buscar_marcos_libres(1);
+    uint32_t primer_marco_libre = marcos_libres[0];
+    free(marcos_libres);
+    return primer_marco_libre;
+}
+
 bool suficiente_memoria(int memoria_solicitada){
     return memoria_solicitada <= config.tam_memoria; // se puede asignar a la memoria un único proceso
 }
@@ -148,3 +195,8 @@ bool suficientes_marcos(int cant_paginas_requeridas){
     return cant_paginas_requeridas <= cant_marcos_libres();
 }
 */ // ahora está la función buscar_marcos_libres, con preguntar que eso no traiga NULL ya estaría. 
+
+int cant_paginas_proceso(uint32_t pid){
+    t_tabla_paginas* tabla_proceso = get_tabla_from_pid(pid);
+    return tablaproceso->cant_paginas;
+}

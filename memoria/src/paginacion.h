@@ -15,6 +15,7 @@ typedef struct{
     uint32_t offset;  // checkear tipo de dato
     // bool presence; // no tenemos memoria virtual, creo que no es necesario esto
 } t_pagina;
+
 typedef struct{
     uint32_t pid;  // pid proceso en actual ejecución
     char* path_proceso; // path de las instrucciones
@@ -28,14 +29,6 @@ typedef struct{ // SIEMPRE CARGADO EN MEMORIA
     int cant_tablas; // esto se puede tener con un list_size
 } t_lista_tablas;
 */ // esto se puede guardar directamente en el pcb de cada proceso en memoria (t_pcb)
-
-/*
-typedef struct{
-    uint32_t pid;
-    uint32_t tid;
-    //e_estado_proceso estado; //mm maybe?? si se usa poner el include necesario!!!
-} t_pseudo_pcb;
-*/ // ya no es necesario (t_pcb)
 
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -60,7 +53,7 @@ void init_memoria();
 void init_paginacion();
 
 // void init_lista_tablas(); //inicializa la lista de tablas y devuelve el puntero
-void init_bitmap_marcos(size_t);
+//void init_bitmap_marcos(size_t); deprecated ahre ahora usamos bitarray de las commons
 void crear_proceso(uint32_t pid, char* path, uint32_t length_path); // inserta nuevo pcb junto a su tabla de páginas inicializada
 void eliminar_proceso(uint32_t); // libera proceso de memoria
 void create_pagina(t_list*); //le mandas la lista de la pagina e inserta la nueva pagina
@@ -91,6 +84,7 @@ void remover_y_eliminar_elementos_de_lista(t_list* lista_original);
 /*          AUXILIARES PARA RESIZE           */
 
 uint32_t* buscar_marcos_libres(size_t cantidad_marcos_libres);
+uint32_t primer_marco_libre();
 t_list* lista_marcos_libres();
 
 bool suficiente_memoria(int);
