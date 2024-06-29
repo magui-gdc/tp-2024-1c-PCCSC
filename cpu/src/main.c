@@ -260,16 +260,35 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUB(parametro1, parametro2);
+        } else if (strcmp(comando, "JNZ") == 0){
+            char *registro = tokens[1]; 
+            char *proxInstruccion = tokens[2]; 
+            jnz(registro, proxInstruccion);
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
             desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
             t_sbuffer *buffer_desalojo = NULL;
             desalojo_proceso(&buffer_desalojo, conexion_kernel, EXIT_PROCESO);
-            // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
-        } else if (strcmp(comando, "JNZ") == 0){
-            char *registro = tokens[1]; 
-            char *proxInstruccion = tokens[2]; 
-            jnz(registro, proxInstruccion);
+        } else if (strcmp(comando, "RESIZE") == 0){
+            int tamanio_en_bytes = atoi(tokens[1]); 
+            t_sbuffer* buffer_memoria_resize = buffer_create(
+                sizeof(uint32_t) + // pid 
+                sizeof(int) // resize
+            );
+            buffer_add_uint32(buffer_memoria_resize, pid_proceso);
+            buffer_add_int(buffer_memoria_resize, tamanio_en_bytes);
+            cargar_paquete(conexion_memoria, RESIZE, buffer_memoria_resize);
+            int respuesta_resize_memoria = recibir_operacion(conexion_memoria);
+            switch (respuesta_resize_memoria){
+            case OUT_OF_MEMORY:
+                seguir_ejecucion = 0;
+                desalojo = 1;
+                t_sbuffer *buffer_out_of_memory = NULL;
+                desalojo_proceso(&buffer_out_of_memory, conexion_kernel, OUT_OF_MEMORY);
+                break;
+            default:
+                break;
+            }
         } else if (strcmp(comando, "MOV_OUT") == 0){
             char* registro_direccion = tokens[1];
             char* registro_dato = tokens[2]; // donde toma el dato para escribir
@@ -278,9 +297,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t valor_a_escribir = obtener_valor_registro(registro_dato);
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_sbuffer* buffer_direcciones_fisicas = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
+            t_respuesta_mmu respuesta_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
             
-            cargar_paquete(conexion_memoria, MOV_OUT, buffer_direcciones_fisicas);
+            cargar_paquete(conexion_memoria, PETICION_ESCRITURA, respuesta_mmu.buffer_peticiones);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             /* analizar si le puede mandar algún error
             switch (recibir_operacion_memoria){
@@ -299,9 +318,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t bytes_a_leer = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_sbuffer* buffer_direcciones_fisicas = mmu("LEER", direccion_logica, bytes_a_leer, 0);
+            t_respuesta_mmu respuesta_mmu = mmu("LEER", direccion_logica, bytes_a_leer, 0);
             
-            cargar_paquete(conexion_memoria, MOV_IN, buffer_direcciones_fisicas);
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, respuesta_mmu.buffer_peticiones);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             switch (recibir_operacion_memoria){
                 /* analizar si le puede mandar algún error
@@ -310,8 +329,11 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                         desalojo = 1;
                     break;
                 */
-            case MOV_IN: 
+            case CONTINUAR: 
                 // TODO: acá le va a responder con un buffer cargado con el valor leído de memoria, y la idea es que se lo guarde en el registro de la instruccion 
+                // por cada peticion de lectura se devuelve un contenido del buffer, la cantidad de peticiones la obtenemos a partir del dato que devolvió el mmu
+                int cantidad_peticiones = respuesta_mmu.cantidad_peticiones;
+                // con esto haríamos un for y leeríamos uno a uno los datos (ya que quizás vienen divididos) para escribirlo en el registro
                 break;
             }
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
@@ -575,15 +597,14 @@ void* recibir_interrupcion(void* conexion){
     return NULL;
 }
 
-t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
+t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
     int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
     int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
     
-    int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA); 
+    int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
     t_sbuffer* buffer_direcciones_fisicas = buffer_create(
         sizeof(int) + // cantidad de peticiones
-        sizeof(uint32_t) * cantidad_peticiones_memoria + // numero/s marco por peticion
-        sizeof(int) * cantidad_peticiones_memoria + // desplazamiento/s por peticion
+        sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
         sizeof(uint32_t) * cantidad_peticiones_memoria // bytes a leer/escribir por peticion
     );
 
@@ -604,9 +625,8 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
             // TODO: agregar entrada a TLB según algoritmo de TLB
             // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
         } 
-        
-        buffer_add_uint32(buffer_direcciones_fisicas, entrada_tlb->marco);
-        buffer_add_int(buffer_direcciones_fisicas, desplazamiento);
+        uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
+        buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
         buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion);
         // TODO: if(strcmp(operacion, "ESCRIBIR") == 0) buffer_add_uint32(buffer_direcciones_fisicas, dato_escribir); // TODO: analizar si está bien cómo se está pasando el tipo de dato para recibirlo correctamente del otro lado (esto porque en ese parámetro se pude haber tomado un valor tanto desde registro UINT8 como UINT32): creo que se debería pasar como un void* ver ISSUE https://github.com/sisoputnfrba/foro/issues/3781
     } else {
@@ -634,9 +654,8 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
                 // TODO: agregar entrada a TLB según algoritmo de TLB
                 // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
             } 
-
-            buffer_add_uint32(buffer_direcciones_fisicas, entrada_tlb->marco);
-            buffer_add_int(buffer_direcciones_fisicas, desplazamiento);
+            uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
+            buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
             buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion);
             // TODO -> ESCRIBIR => cómo se envía datos_a_enviar según lo cargado en los pasos anteriores   
 
@@ -645,8 +664,10 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
             desplazamiento = 0; // las páginas nuevas siempre parten de su offset 0
         }
     }
-
-    return buffer_direcciones_fisicas;
+    t_respuesta_mmu respuesta;
+    respuesta.cantidad_peticiones = cantidad_peticiones_memoria;
+    respuesta.buffer_peticiones = buffer_direcciones_fisicas;
+    return respuesta;
 }
 
 t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina){

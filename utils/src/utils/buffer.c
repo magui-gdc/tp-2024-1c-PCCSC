@@ -78,6 +78,20 @@ char *buffer_read_string(t_sbuffer *buffer, uint32_t *length) {
     return string;
 }
 
+// para agregar void* (datos donde no importa su tipo)
+void buffer_add_void(t_sbuffer *buffer, void *data, uint32_t size) {
+    buffer_add_uint32(buffer, size);  
+    buffer_add(buffer, data, size);  
+}
+
+// para leer void* (datos donde no importa su tipo)
+void *buffer_read_void(t_sbuffer *buffer, uint32_t *size) {
+    *size = buffer_read_uint32(buffer);  
+    void *data = malloc(*size);
+    buffer_read(buffer, data, *size);  
+    return data;
+}
+
 // Agrega registros CPU al buffer
 void buffer_add_registros(t_sbuffer *buffer, t_registros_cpu *registros) {
     buffer_add(buffer, &(registros->PC), sizeof(uint32_t));

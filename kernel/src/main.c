@@ -618,15 +618,15 @@ void recibir_proceso_desalojado(){
     switch (mensaje_desalojo){
         case EXIT_PROCESO:
         case FINALIZAR_PROCESO:
+        case OUT_OF_MEMORY:
             control_quantum_desalojo();
             log_debug(logger, "se termino de ejecutar proceso");
             recupera_contexto_proceso(buffer_desalojo); // carga registros en el PCB del proceso en ejecución
             mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING));
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
-            if(mensaje_desalojo == EXIT_PROCESO)
-                log_finaliza_proceso(logger, proceso_desalojado->pid, "SUCCESS");
-            else 
-                log_finaliza_proceso(logger, proceso_desalojado->pid, "INTERRUPTED_BY_USER");
+            char motivo[25];
+            strcpy(motivo, (mensaje_desalojo == EXIT_PROCESO) ? "SUCCESS" : ((mensaje_desalojo == OUT_OF_MEMORY) ? "OUT_OF_MEMORY" : "INTERRUPTED_BY_USER"));
+            log_finaliza_proceso(logger, proceso_desalojado->pid, motivo);
             // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
             sem_post(&orden_proceso_exit);
         break;
@@ -923,8 +923,8 @@ void *planificar_new_to_ready(void *archivo_config)
         buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
 
         cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
-        int recibir_respuesta_memoria = recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
-        //if(recibir_respuesta_memoria != PROCESO_CREADO) // TODO: PODRÍA NO PODER CREARSE EL PROCESO? 
+        recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
+        // TODO: podría devolver alguna otra cosa distinta de CONTINUAR???
 
         // 3. Envía a READY
         primer_elemento->estado = READY;
@@ -968,7 +968,7 @@ void *planificar_all_to_exit(void *args){
                 // ya desalojó correctamente desde donde correspondía (en caso de estado EXEC)
                 op_code estado_actual = proceso_exit->estado;
                 liberar_recursos(proceso_exit); // puede asignar procesos a READY (BLOCKED -> READY) => va antes de liberar el grado de multiprogramación: (BLOCKED -> READY) > (NEW -> READY)
-                liberar_proceso_en_memoria(proceso_exit->pid);// TODO: libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!
+                liberar_proceso_en_memoria(proceso_exit->pid);// libero memoria => se le manda ORDEN para que libere los MARCOS y la tabla de páginas!
                 log_cambio_estado_proceso(logger, proceso_exit->pid, (char *)estado_proceso_strings[estado_actual], "EXIT");
                 sem_post(&mutex_planificacion_pausada[3]);
                 proceso_exit->estado = EXIT;
@@ -1158,6 +1158,7 @@ void liberar_proceso_en_memoria(uint32_t pid_proceso){
     buffer_add_uint32(buffer_memoria, pid_proceso);
 
     cargar_paquete(conexion_memoria, ELIMINAR_PROCESO, buffer_memoria); 
+    recibir_operacion(conexion_memoria);
     log_debug(logger, "envio proceso a liberar a memoria");
 } //FUNCION liberar_memoria_proceso VA EN MEMORIA TRAS RECIBIR ESTE COD_OP
 // ------------- FIN FUNCIONES PARA MEMORIA -------------

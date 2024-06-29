@@ -1,26 +1,18 @@
-#include <utils/utilsServer.h>
+#include <commons/temporal.h>
 
-/*
-PUERTO_ESCUCHA=8002
-TAM_MEMORIA=4096                    este es el tamaño de la memoria fisica
-TAM_PAGINA=32                       tamaño de cada pagina,
-PATH_INSTRUCCIONES=/home/utnso/scripts-pruebas
-RETARDO_RESPUESTA=1000
-*/
+/*          RETARDO CONFIG          */
+void tiempo_espera_retardo(t_temporal* timer);
 
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
-/*          ACCESO ESPACIO USUARIO            */
-
+/*          ACCESO ESPACIO USUARIO         */
 #define ERROR
 #define OK
-void* leer_memoria(void* dir_fisica, int tam_lectura);
-int escribir_memoria(char* dir_fisica, void* dato);
-
-
-/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+void* leer_memoria(uint32_t dir_fisica, int tam_lectura);
+int escribir_memoria(uint32_t dir_fisica, void* dato, int tam_escritura);
 
 /*          RESIZE            */
+void resize_proceso(t_temporal* retardo, int socket_cliente, uint32_t pid, int new_size);
+void ampliar_proceso(uint32_t pid, int cantidad, uint32_t* marcos_solicitados);
+void reducir_proceso(uint32_t pid, int cantidad);
 
-void ampliar_proceso(uint32_t pid, int new_size);
 

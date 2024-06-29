@@ -1,13 +1,11 @@
 #ifndef ENUMS_H
 #define ENUMS_H
 
-typedef enum
-{
+typedef enum{
 	CONEXION, // cliente - servidor
 	DATOS_MEMORIA, // cpu - memoria
 	PAQUETE,
 	INICIAR_PROCESO, // kernel - memoria
-	PROCESO_CREADO,
 	ELIMINAR_PROCESO, // kernel - memoria
 	INSTRUCCION, // memoria - cpu
 	EJECUTAR_PROCESO, // kernel - cpu
@@ -39,7 +37,9 @@ typedef enum
 	MOV_OUT,
 	RESIZE,
 	OUT_OF_MEMORY,
-	COPY_STRING
+	COPY_STRING,
+	PETICION_ESCRITURA,  // IO/CPU - MEMORIA
+	PETICION_LECTURA // IO/CPU - MEMORIA
 }op_code;
 
 

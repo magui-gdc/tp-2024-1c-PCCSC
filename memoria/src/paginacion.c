@@ -7,13 +7,14 @@
 
 void* memoria;   // espacio de memoria real para usuario => tiene que ser un void* PORQUE TODO SE DEBE GUARDAR DE FORMA CONTIGUA
 t_list* lista_pcb_tablas_paginas; // lista de procesos con sus respectivas tablas de páginas
-t_bitarray *bitmap_marcos_libres; // array dinámico donde su length = cantidad de marcos totales en memoria, que guarda por posición valores 0: marco libre; y 1: marco ocupado por algún proceso
+t_bitarray *bitmap_marcos; // array dinámico donde su length = cantidad de marcos totales en memoria, que guarda por posición valores 0: marco libre; y 1: marco ocupado por algún proceso
+size_t cantidad_marcos_totales;
 config_struct config;
 
 /*          NACIMIENTO            */
 
 void init_memoria(){
-    size_t cantidad_marcos_totales = config.tam_memoria / config.tam_pagina;
+    cantidad_marcos_totales = config.tam_memoria / config.tam_pagina;
 
     memoria = (void*)calloc(cantidad_marcos_totales, config.tam_pagina);
     if (!memoria) {
@@ -21,19 +22,15 @@ void init_memoria(){
         exit(EXIT_FAILURE);
     }
 
-    //init_bitmap_marcos(cantidad_marcos_totales);
-    bitarray_create(bitmap_marcos_libres, cantidad_marcos_totales);
+    init_bitmap_marcos();
+    //bitarray_create(bitmap_marcos, cantidad_marcos_totales); el segundo parámetro del create es un char* (podría ser un void*), y bitarrat_create devuelve el t_bitarray cargado!
 
     lista_pcb_tablas_paginas = list_create();
-    if (!lista_pcb_tablas_paginas) {
-        log_error(logger, "Error al crear la lista de PCB y tablas de páginas");
-        free(memoria);
-        exit(EXIT_FAILURE);
-    }
+    // el malloc se hace dentro de list_create, si falla el malloc falla la función y se anuncia en pantalla, el chequeo del malloc no siempre es necesario y nos ahorramos código así
 }
 
-/*
-void init_bitmap_marcos(size_t cantidad_marcos_totales){
+
+void init_bitmap_marcos(){
     size_t tamanio_bitmap = cantidad_marcos_totales / 8; // porque necesitamos el valor en BYTES
     if (cantidad_marcos_totales % 8 != 0) {
         tamanio_bitmap++;  // se anañe un byte extra si hay bits adicionales parciales que no llegarían a completar el byte
@@ -44,19 +41,14 @@ void init_bitmap_marcos(size_t cantidad_marcos_totales){
         exit(EXIT_FAILURE);
     }
 
-    bitmap_marcos_libres = bitarray_create(bitmap, tamanio_bitmap);
-    if (!bitmap_marcos_libres) {
-        log_error(logger, "Error al crear el bitarray de marcos libres");
-        free(bitmap);
-        exit(EXIT_FAILURE);
-    }
+    bitmap_marcos = bitarray_create_with_mode(bitmap, tamanio_bitmap, LSB_FIRST);
 
     // inicializa todos los bits a 0 (todos los marcos están libres)
     for (size_t i = 0; i < cantidad_marcos_totales; i++) {
-        bitarray_clean_bit(bitmap_marcos_libres, i);
+        bitarray_clean_bit(bitmap_marcos, i);
     }
 }
-*/
+
 
 void crear_proceso(uint32_t pid, char* path, uint32_t length_path) {
     t_pcb* proceso_memoria = malloc(sizeof(t_pcb));
@@ -67,30 +59,15 @@ void crear_proceso(uint32_t pid, char* path, uint32_t length_path) {
 
     proceso_memoria->pid = pid;
     proceso_memoria->path_proceso = malloc(length_path + 1);
-    if (!proceso_memoria->path_proceso) {
-        log_error(logger, "Error en la asignación de memoria para path del proceso.");
-        free(proceso_memoria);
-        exit(EXIT_FAILURE);
-    }
-
     strcpy(proceso_memoria->path_proceso, path);
-    
     proceso_memoria->tabla_paginas = list_create();
-    if (!proceso_memoria->tabla_paginas) {
-        log_error(logger, "Error en la creación de la lista de páginas del proceso.");
-        free(proceso_memoria->path_proceso);
-        free(proceso_memoria);
-        exit(EXIT_FAILURE);
-    }
-
-    proceso_memoria->cant_paginas = 0;
 
     list_add(lista_pcb_tablas_paginas, proceso_memoria);
     log_creacion_destruccion_de_tabla_de_pagina(logger, pid, 0);
 }
 
 
-void create_pagina(t_list *tabla_paginas){
+void create_pagina(t_list *tabla_paginas, uint32_t marco){
 
     t_pagina *pagina_aux = malloc(sizeof(t_pagina));
     if (!pagina_aux){
@@ -98,19 +75,11 @@ void create_pagina(t_list *tabla_paginas){
         exit(EXIT_FAILURE);
     }
 
-    pagina_aux->marco = -1; 
+    pagina_aux->id_marco = marco; // se le pasa el marco que va a tener asignada la página cuando se la crea
     pagina_aux->offset = 0;
-
-     if (list_add(tabla_paginas, pagina_aux) == -1) {
-        log_error(logger, "Error en la inserción de una Página en la Tabla de Páginas.");
-        free(pagina_aux);  
-        exit(EXIT_FAILURE);
-    }
-
-    // tabla_paginas->cant_paginas++; tabla paginas es de tipo t_list
-    
     list_add(tabla_paginas, pagina_aux);
-    free(pagina_aux);
+    
+    //free(pagina_aux); // NO se libera acá! se libera una vez que se saca la página de la lista, sino ya no existiría el puntero recién creado en la lista de tabla_paginas!
 }
 
 
@@ -118,14 +87,42 @@ void create_pagina(t_list *tabla_paginas){
 
 /*          MUERTE            */
 
+void liberar_paginas(t_pcb* proceso_a_liberar, int cantidad_paginas_a_liberar){
+    int cantidad_paginas_ocupadas = list_size(proceso_a_liberar->tabla_paginas);
+    int inicio = cantidad_paginas_ocupadas - 1;
+    int fin = cantidad_paginas_ocupadas - cantidad_paginas_a_liberar; // cantidad_paginas_a_liberar es igual a cantidad_paginas_ocupadas cuando se está eliminando el proceso!
+    for(int i = inicio; i >= fin; i--){       
+        // REMUEVE LA PAGINA DE LA TABLA DEL PROCESO
+        t_pagina* pagina_liberada = (t_pagina*) list_remove(proceso_a_liberar->tabla_paginas, i);
+
+        // LIBERA MARCO DEL BITMAP
+        bitarray_clean_bit(bitmap_marcos, pagina_liberada->id_marco); 
+        // No se borran los datos del marco
+
+        // LIBERA/ELIMINA página
+        free(pagina_liberada);      
+    }
+}
+
 void eliminar_proceso(uint32_t pid){
-    // hacer priero el resize, etc. 
-    // TODO: recorrer la tabla de páginas, buscar los marcos asociados a cada página y marcarlos como libres
-    // TODO: habría que mandar señal a la CPU para que libere TBL???? mmmmmmmm no creo analizar
-    // TODO: remover de la lista de procesos el proceso, liberar atributos como el path_instrucciones y la tabla de páginas, liberar por último el proceso completo
-    //free_tabla_paginas(pid); 
-    //remove_from_bitmap(pid);  
-    //remove_from_lista_procesos(pid);
+    
+    // Función de condición para buscar el proceso por PID
+    bool buscar_por_pid(void* data) {
+        return ((t_pcb*)data)->pid == pid; // compara con el pid pasado por parámetro a la función eliminar_proceso
+    };
+
+    // 1. Busca y elimina el proceso de la lista de procesos en memoria
+    t_pcb* proceso_a_eliminar = (t_pcb*)list_remove_by_condition(lista_pcb_tablas_paginas, buscar_por_pid);
+
+    // 2. Recorre la tabla de páginas, buscar los marcos asociados a cada una, los marca como libres y libera las páginas. 
+    int tamanio_tabla_pagina = list_size(proceso_a_eliminar->tabla_paginas);
+    liberar_paginas(proceso_a_eliminar, tamanio_tabla_pagina); 
+    log_creacion_destruccion_de_tabla_de_pagina(logger, proceso_a_eliminar->pid, tamanio_tabla_pagina);
+
+    // 3. Libero el resto de la memoria
+    list_destroy(proceso_a_eliminar->tabla_paginas);
+    free(proceso_a_eliminar->path_proceso);
+    free(proceso_a_eliminar);
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -159,13 +156,13 @@ int get_bitman_index(void* direccion_marco){
 /*          AUXILIARES PARA RESIZE           */
 
 uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
-    size_t max_bit = bitarray_get_max_bit(bitmap_marcos_libres);
+    size_t max_bit = bitarray_get_max_bit(bitmap_marcos);
     size_t marcos_libres_encontrados = 0;
     uint32_t *marcos_libres = malloc(cantidad_marcos_libres * sizeof(uint32_t));
 
     for (size_t i = 0; i < max_bit && marcos_libres_encontrados < cantidad_marcos_libres; i++) {
-        if (!bitarray_test_bit(bitmap_marcos_libres, i)) {
-            marcos_libres[marcos_libres_encontrados] = i;
+        if (!bitarray_test_bit(bitmap_marcos, i)) {
+            marcos_libres[marcos_libres_encontrados] = i; // [7, 18, 30]
             marcos_libres_encontrados++;
         }
     }
@@ -174,6 +171,11 @@ uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
         // no se encontraron suficientes marcos libres
         free(marcos_libres);
         return NULL;
+    }
+
+    // los marco como ocupados 
+    for (size_t i = 0; i < cantidad_marcos_libres; i++) {
+        bitarray_set_bit(bitmap_marcos, marcos_libres[i]);
     }
 
     return marcos_libres;
@@ -190,13 +192,7 @@ bool suficiente_memoria(int memoria_solicitada){
     return memoria_solicitada <= config.tam_memoria; // se puede asignar a la memoria un único proceso
 }
 
-/*
-bool suficientes_marcos(int cant_paginas_requeridas){
-    return cant_paginas_requeridas <= cant_marcos_libres();
-}
-*/ // ahora está la función buscar_marcos_libres, con preguntar que eso no traiga NULL ya estaría. 
-
-int cant_paginas_proceso(uint32_t pid){
-    t_tabla_paginas* tabla_proceso = get_tabla_from_pid(pid);
-    return tablaproceso->cant_paginas;
+int cant_paginas_ocupadas_proceso(uint32_t pid){
+    t_pcb* proceso = get_element_from_pid(pid);
+    return list_size(proceso->tabla_paginas);
 }

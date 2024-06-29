@@ -3,7 +3,6 @@
 #include <utils/hello.h>
 #include "paginacion.h" 
 #include "main.h"
-#include <commons/temporal.h>
 
 pthread_t thread_memoria;
 
@@ -32,7 +31,7 @@ int main(int argc, char *argv[]){
 
     log_destroy(logger);
     config_destroy(archivo_config);
-    bitarray_destroy(bitmap_marcos_libres);
+    bitarray_destroy(bitmap_marcos);
 
     return EXIT_SUCCESS;
 }
@@ -47,6 +46,7 @@ void cargar_config_struct_MEMORIA(t_config *archivo_config){
 
 void *atender_cliente(void *cliente){
     int cliente_recibido = *(int *)cliente;
+    t_temporal* timer; // cada cliente tendrá un timer asociado para controlar el retardo de las peticiones
     while (1){
         int cod_op = recibir_operacion(cliente_recibido); // bloqueante
         switch (cod_op){
@@ -61,15 +61,8 @@ void *atender_cliente(void *cliente){
             buffer_add_int(buffer_a_cpu_datos_memoria, config.tam_pagina);
             cargar_paquete(cliente_recibido, DATOS_MEMORIA, buffer_a_cpu_datos_memoria);
         break;
-        case PEDIR_FRAME:
-           /* t_sbuffer* buffer_pagina = cargar_buffer(cliente_recibido);
-            int pagina_enviada = buffer_read_int(buffer_pagina);
-            int frame = buscar_frame(pagina_enviada);
-            if (frame == -1){
-                
-            } */
-        break;
-        case INICIAR_PROCESO: // memoria recibe de kernel el proceso, recibe el path y lo chequea!!
+        case INICIAR_PROCESO: // KERNEL
+            timer = temporal_create(); // SIEMPRE PRIMERO ESTO! calcula tiempo de petición
             t_sbuffer *buffer_path = cargar_buffer(cliente_recibido);
             uint32_t pid_iniciar = buffer_read_uint32(buffer_path);
             uint32_t longitud_path;
@@ -77,41 +70,30 @@ void *atender_cliente(void *cliente){
             path[strcspn(path, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
 
             crear_proceso(pid_iniciar, path, longitud_path); 
-            op_code respuesta_kernel = PROCESO_CREADO; // si todo fue ok enviar PROCESO_CREADO para que kernel pueda continuar con su planificacion
-            ssize_t bytes_enviados = send(cliente_recibido, &respuesta_kernel, sizeof(respuesta_kernel), 0);
-            if (bytes_enviados == -1) {
-                log_error(logger, "Error enviando el dato");
-                exit(EXIT_FAILURE);
-            }
+
+            op_code respuesta_kernel = CONTINUAR; // si todo fue ok enviar CONTINUAR para que kernel pueda continuar con su planificacion
+            tiempo_espera_retardo(timer); // ANTES DE RESPONDER ESPERO QUE FINALICE EL RETARDO
+            send(cliente_recibido, &respuesta_kernel, sizeof(respuesta_kernel), 0);
+
+            buffer_destroy(buffer_path);
         break;
-        case MOV_IN:
-            // TODO: leer buffer
-            // y hacer cosas
-            // si fue todo bien: mensaje CONTINUAR
-            /*
-            en caso de continuar(que no necesitas mandar nada mas qye le mensaje)
-            op_code respuesta_cpu = CONTINUAR;
-            ssize_t bytes_enviados = send(cliente_recibido, &respuesta_cpu, sizeof(respuesta_cpu), 0);
-            if (bytes_enviados == -1) {
-                perror("Error enviando el dato");
-                exit(EXIT_FAILURE);
-            }
-            */
-            // mandas este codigo OUT_OF_MEMORY
-            // LIBERAR buffer, memoria utilizada dinamicamente..
-        break;
-        case MOV_OUT:
-            
-        break;
-        case ELIMINAR_PROCESO: // memoria elimina el proceso, kernel le pasa el path o el pid
+        case ELIMINAR_PROCESO: // KERNEL
+            timer = temporal_create();
             t_sbuffer* buffer_eliminar = cargar_buffer(cliente_recibido);
             uint32_t pid_eliminar = buffer_read_uint32(buffer_eliminar);
+
             log_debug(logger, "se mando a eliminar/liberar proceso %u", pid_eliminar);
             eliminar_proceso(pid_eliminar); 
+
+            op_code respuesta_cpu = CONTINUAR;
+            tiempo_espera_retardo(timer);
+            send(cliente_recibido, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+
+            buffer_destroy(buffer_eliminar);
         break;
-        case LEER_PROCESO:
+        case LEER_PROCESO: // CPU
             // 1. comienza a contar el timer para calcular retardo en rta a CPU
-            t_temporal* timer = temporal_create();
+            timer = temporal_create();
 
             // 2. cargo buffer
             t_sbuffer *buffer_lectura = cargar_buffer(cliente_recibido);
@@ -157,102 +139,156 @@ void *atender_cliente(void *cliente){
 
                     buffer_add_string(buffer_instruccion, (uint32_t)strlen(instruccion), instruccion);
 
-                    // cuento ms del timer y espero a que se complete el tiempo de retardo!
-                    int64_t tiempo_transcurrido = temporal_gettime(timer);
-
-                    if (tiempo_transcurrido < config.retardo_respuesta) {
-                        usleep((config.retardo_respuesta - tiempo_transcurrido) * 1000); // usleep espera en microsegundos
-                    }
+                    tiempo_espera_retardo(timer); // SIEMPRE, antes de terminar la petición a memoria, espera a que se complete el retardo de la configuración
                     cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
-
                     buffer_destroy(buffer_lectura);
-                    temporal_destroy(timer);
                 } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
                 free(instruccion);
             }
             free(path_instrucciones_proceso);
+        break;
+        case RESIZE: // solo CPU
+            timer = temporal_create(); // SIEMPRE PRIMERO ESTO! calcula tiempo de petición
+            t_sbuffer *buffer_resize = cargar_buffer(cliente_recibido);
+            uint32_t proceso_resize = buffer_read_uint32(buffer_resize);
+            int tamanio_resize = buffer_read_int(buffer_resize);
+            resize_proceso(timer, cliente_recibido, proceso_resize, tamanio_resize); // ya responde a CPU y se encarga terminar el retardo
+            buffer_destroy(buffer_resize);
+        break;
+        case TLB_MISS: // CPU
+            // recibe pid + nro_pagina y va 
+            // get_element_by_pid(pid)
+            // devuelve número marco a cpu
+        break;
+        case PETICION_ESCRITURA: // CPU / IO
+        /*
+         timer = temporal_create();
+        for: cantidad peticiones... (va a acceder a las direcciones fisicas y escribir el dato pasado por parámetro)
+        log_acceso_espacio_usuario
+        
+        tiempo_espera_retardo(timer);
+        responder al cliente informando OK o error SIEMPRE RESPONDER
+        liberar memoria utilizada (buffers cargados, mallocs, etc)
+        */
+        break;
+        case PETICION_LECTURA: // CPU / IO
+        /*
+         timer = temporal_create();
+        for: cantidad peticiones... (va a acceder a las direcciones fisicas, leer el dato pasado por parámetro y cargar un buffer con cada dato solicitado y su tamanio)
+        log_acceso_espacio_usuario
+
+         tiempo_espera_retardo(timer);
+        responder al cliente informando OK o error SIEMPRE RESPONDER
+        liberar memoria utilizada (buffers cargados, mallocs, etc)
+        */
         break;
         case -1:
             log_error(logger, "Cliente desconectado.");
             close(cliente_recibido); // cierro el socket accept del cliente
             free(cliente);           // libero el malloc reservado para el cliente
             pthread_exit(NULL);      // solo sale del hilo actual => deja de ejecutar la función atender_cliente que lo llamó
+        break;
         default:
             log_warning(logger, "Operacion desconocida.");
-            break;
+        break;
         }
     }
 }
 
 
 ////// funciones memoria
-// crear_proceso y eliminar_proceso quedaron definidos en paginacion.c
-
 // RESIZE
 
-void resize_proceso(uint32_t pid, int new_size){
-    
-    int max_sin_agregar_pag = cant_paginas_proceso(pid) * config.tam_pagina;
-    int min_sin_agregar_pag = max_sin_agregar_pag - config.tam_pagina;
-    
-    int new_size_a_paginas = (int)ceil((float)new_size / config.tam_pagina);
-    
-    if (new_size > max_sin_agregar_pag){
-        int paginas_a_aumentar = new_size_a_paginas - max_sin_agregar_pag;
-        ampliar_proceso(pid, paginas_a_aumentar);
-    }
-    if (new_size < min_sin_agregar_pag){
-        int paginas_a_reducir = min_sin_agregar_pag - new_size_a_paginas;
-        reducir_proceso(pid, paginas_a_reducir);
-    }
+void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new_size){
 
+    // 1. Primera validación: el resize NO es mayor al tam_memoria => si fuese mayor se estaría pidiendo una cantidad de páginas MAYOR a la que puede tener cada tabla de páginas
+    if(!suficiente_memoria(new_size)){
+        op_code respuesta_cpu = OUT_OF_MEMORY;
+        tiempo_espera_retardo(timer);
+        ssize_t bytes_enviados = send(socket_cliente, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+        if (bytes_enviados == -1) {
+            log_error(logger, "Error enviando dato OUT_OF_MEMORY a CPU");
+            exit(EXIT_FAILURE);
+        }
+        return;
+    }
+    
+    // 2. Analizar si corresponde ampliar o reducir el proceso
+    int cantidad_paginas_ocupadas = cant_paginas_ocupadas_proceso(pid); // paginas ocupadas por el proceso
+    int cantidad_paginas_solicitadas = (int)ceil((double)(new_size / config.tam_pagina)); // paginas que se necesitan con el nuevo valor del resize
+    
+    if (cantidad_paginas_solicitadas > cantidad_paginas_ocupadas){
+        int paginas_a_aumentar = cantidad_paginas_solicitadas - cantidad_paginas_ocupadas;
+        // 3. Segunda validación: ¿hay suficientes marcos libres?
+        uint32_t* marcos_solicitados = buscar_marcos_libres(paginas_a_aumentar); // TODO: AGREGAR SINCRONIZACION EN LA FUNCIÓN
+        if(!marcos_solicitados){
+            op_code respuesta_cpu = OUT_OF_MEMORY;
+            tiempo_espera_retardo(timer);
+            ssize_t bytes_enviados = send(socket_cliente, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+            if (bytes_enviados == -1) {
+                log_error(logger, "Error enviando dato OUT_OF_MEMORY a CPU");
+                exit(EXIT_FAILURE);
+            }
+            return;
+        }
+        ampliar_proceso(pid, paginas_a_aumentar, marcos_solicitados);
+    } else if (cantidad_paginas_solicitadas < cantidad_paginas_ocupadas){
+        int paginas_a_reducir = cantidad_paginas_ocupadas - cantidad_paginas_solicitadas;
+        reducir_proceso(pid, paginas_a_reducir);
+    } // si cantidad_paginas_solicitadas == cantidad_paginas_ocupadas NO se hace nada :)
+    op_code respuesta_cpu = CONTINUAR;
+    tiempo_espera_retardo(timer);
+    send(socket_cliente, &respuesta_cpu, sizeof(respuesta_cpu), 0);
+    return;
 }
 
-
-
 // AMPLIACION 
-void ampliar_proceso(uint32_t pid, int cantidad){
+void ampliar_proceso(uint32_t pid, int cantidad, uint32_t* marcos_solicitados){
     t_pcb* proceso = get_element_from_pid(pid);
-    
-    //CHECKEAR MARCOS DISPONIBLES
-    uint32_t marco_libre = primer_marco_libre(); // un solo marco? puede ser que necesite mas?
-
-    for(int i = 0; i < cantidad; i++){
-        //CREAR PAGINA
-        create_pagina(proceso->tabla_paginas);
-        //ACTUALIZAR BITMAP
-        bitarray_set_bit(bitmap_marcos_libres,???)// como se cual es el marco??
-    }
-    /*
-    int cant_paginas_requeridas = new_size/config.tam_memoria;
-    if(!suficiente_memoria(new_size) || ! suficientes_marcos(cant_paginas_requeridas)){
-        log_error(logger, "No hay suficiente espacio para este proceso");
-        exit(OUT_OF_MEMORY);
-    }*/
+    for(int i = 0; i < cantidad; i++)
+        create_pagina(proceso->tabla_paginas, marcos_solicitados[i]); 
 }
 
 void reducir_proceso(uint32_t pid, int cantidad){
-    for(int i = 0; i < cantidad; i++){       
-        //LIBERAR PAGINA y eliminarla.
-        
-        //ACTUALIZAR BITMAP
-        proceso->cant_paginas--;
+    t_pcb* proceso = get_element_from_pid(pid);
+    liberar_paginas(proceso, cantidad);
+}
+
+/*          RETARDO CONFIG          */
+void tiempo_espera_retardo(t_temporal* timer) {
+    // cuento ms del timer y espero a que se complete el tiempo de retardo!
+    int64_t tiempo_transcurrido = temporal_gettime(timer);
+
+    if (tiempo_transcurrido < config.retardo_respuesta) {
+        usleep((config.retardo_respuesta - tiempo_transcurrido) * 1000); // usleep espera en microsegundos
     }
+
+    temporal_destroy(timer);
 }
     
     
 /*          ACCESO ESPACIO USUARIO            */
-
-void* leer_memoria(void* dir_fisica, int tam_lectura){
-    void* dato;
-    memcpy(dato, dir_fisica, tam_lectura);
+// uint32_t marco*tam_pagina + offset
+// dir. marco*tam_pangina + offset
+void* leer_memoria(uint32_t dir_fisica, int tam_lectura){
+    void* dato = malloc(tam_lectura);
+    // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
+    memcpy(dato, memoria + dir_fisica, tam_lectura);
     return dato;
 }
 
-int escribir_memoria(char* dir_fisica, void* dato){
-    memcpy(dir_fisica,dato,sizeof(dato));
 
-    dato_escrito = leer_memoria(dir_fisica,sizeof(dato));
-    if(dato_escrito==NULL) ? return ERROR;
-    else return OK;
+int escribir_memoria(uint32_t dir_fisica, void* dato, int tam_escritura){
+    // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
+    memcpy(memoria + dir_fisica, dato, tam_escritura);
+
+    void* dato_escrito = leer_memoria(dir_fisica, tam_escritura);
+    if(!dato_escrito)
+        return DESALOJAR;
+    else {
+        log_debug(logger, "lo que acabamos de escribir ¿? %s .", (char*)dato_escrito);
+        return CONTINUAR;
+    }
 }
+
+
