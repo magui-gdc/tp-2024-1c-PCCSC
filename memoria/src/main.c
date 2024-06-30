@@ -96,9 +96,9 @@ void *atender_cliente(void *cliente){
             timer = temporal_create();
 
             // 2. cargo buffer
-            t_sbuffer *buffer_lectura = cargar_buffer(cliente_recibido);
-            uint32_t pid_proceso = buffer_read_uint32(buffer_lectura); // guardo PID del proceso del cual se quiere leer
-            uint32_t pc_proceso = buffer_read_uint32(buffer_lectura);  // guardo PC para elegir la prox INSTRUCCION a ejecutar
+            t_sbuffer *buffer_lectura_instrucciones = cargar_buffer(cliente_recibido);
+            uint32_t pid_proceso = buffer_read_uint32(buffer_lectura_instrucciones); // guardo PID del proceso del cual se quiere leer
+            uint32_t pc_proceso = buffer_read_uint32(buffer_lectura_instrucciones);  // guardo PC para elegir la prox INSTRUCCION a ejecutar
 
             log_debug(logger, "Recibi para leer del proceso %u, la prox INST desde PC %u", pid_proceso, pc_proceso);
 
@@ -141,7 +141,7 @@ void *atender_cliente(void *cliente){
 
                     tiempo_espera_retardo(timer); // SIEMPRE, antes de terminar la petición a memoria, espera a que se complete el retardo de la configuración
                     cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
-                    buffer_destroy(buffer_lectura);
+                    buffer_destroy(buffer_lectura_instrucciones);
                 } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
                 free(instruccion);
             }
@@ -171,26 +171,56 @@ void *atender_cliente(void *cliente){
             buffer_destroy(buffer_tlb_miss);
         break;
         case PETICION_ESCRITURA: // CPU / IO
-        /*
-         timer = temporal_create();
-        for: cantidad peticiones... (va a acceder a las direcciones fisicas y escribir el dato pasado por parámetro)
-        log_acceso_espacio_usuario
-        
-        tiempo_espera_retardo(timer);
-        responder al cliente informando OK o error SIEMPRE RESPONDER
-        liberar memoria utilizada (buffers cargados, mallocs, etc)
-        */
+            t_sbuffer* buffer_escritura = cargar_buffer(cliente_recibido);
+            uint32_t proceso_peticion_escritura = buffer_read_uint32(buffer_escritura);
+            int cantidad_peticiones_escritura = buffer_read_int(buffer_escritura);
+
+            for (int i = 0; i < cantidad_peticiones_escritura; i++){
+                timer = temporal_create(); // por cada peticion de escritura corre el TIMER
+
+                uint32_t direccion_fisica = buffer_read_uint32(buffer_escritura);
+                uint32_t bytes_peticion;
+                void* dato_escritura = buffer_read_void(buffer_escritura, &bytes_peticion);
+
+                log_info(logger, "PID: %u - Accion: ESCRIBIR - Direccion fisica: %u - Tamaño %u", proceso_peticion_escritura, direccion_fisica, bytes_peticion);
+                escribir_memoria(direccion_fisica, dato_escritura, bytes_peticion);
+
+                tiempo_espera_retardo(timer);
+            }
+
+            op_code respuesta_escritura = CONTINUAR;
+            send(cliente_recibido, &respuesta_escritura, sizeof(respuesta_escritura), 0);
+            buffer_destroy(buffer_escritura);          
         break;
         case PETICION_LECTURA: // CPU / IO
-        /*
-         timer = temporal_create();
-        for: cantidad peticiones... (va a acceder a las direcciones fisicas, leer el dato pasado por parámetro y cargar un buffer con cada dato solicitado y su tamanio)
-        log_acceso_espacio_usuario
+            t_sbuffer* buffer_lectura = cargar_buffer(cliente_recibido);
+            uint32_t proceso_peticion_lectura = buffer_read_uint32(buffer_lectura);
+            int cantidad_peticiones_lectura = buffer_read_int(buffer_lectura);
 
-         tiempo_espera_retardo(timer);
-        responder al cliente informando OK o error SIEMPRE RESPONDER
-        liberar memoria utilizada (buffers cargados, mallocs, etc)
-        */
+            uint32_t tamanio_dato_lectura = calcular_tamanio_dato_lectura(buffer_lectura, cantidad_peticiones_lectura);
+            t_sbuffer* buffer_datos_lectura = buffer_create(
+                    sizeof(int) + // cantidad_peticiones_lectura
+                    sizeof(uint32_t) * cantidad_peticiones_lectura + // uint32_t de cada void* a leer
+                    tamanio_dato_lectura // cantidad de bytes totales del dato a leer (que podría estar partido en varios void*)
+            );
+            buffer_add_int(buffer_datos_lectura, cantidad_peticiones_lectura);
+
+            for (int i = 0; i < cantidad_peticiones_lectura; i++){
+                timer = temporal_create(); // por cada peticion de escritura corre el TIMER
+
+                uint32_t direccion_fisica = buffer_read_uint32(buffer_lectura);
+                uint32_t bytes_peticion = buffer_read_uint32(buffer_lectura);
+
+                log_info(logger, "PID: %u - Accion: LEER - Direccion fisica: %u - Tamaño %u", proceso_peticion_lectura, direccion_fisica, bytes_peticion);
+                void* dato_leido = leer_memoria(direccion_fisica, bytes_peticion);
+                buffer_add_void(buffer_datos_lectura, dato_leido, bytes_peticion);
+                free(dato_leido);
+
+                tiempo_espera_retardo(timer);
+            }
+
+            cargar_paquete(cliente_recibido, PETICION_LECTURA, buffer_datos_lectura);
+            buffer_destroy(buffer_lectura); 
         break;
         case -1:
             log_error(logger, "Cliente desconectado.");
@@ -241,9 +271,11 @@ void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new
             }
             return;
         }
+        log_info(logger, "PID: %u - Tamaño Actual: %d - Tamaño a Ampliar: %d", pid, cantidad_paginas_ocupadas*config.tam_pagina, cantidad_paginas_solicitadas*config.tam_pagina);
         ampliar_proceso(pid, paginas_a_aumentar, marcos_solicitados);
     } else if (cantidad_paginas_solicitadas < cantidad_paginas_ocupadas){
         int paginas_a_reducir = cantidad_paginas_ocupadas - cantidad_paginas_solicitadas;
+        log_info(logger, "PID: %u - Tamaño Actual: %d - Tamaño a Reducir: %d", pid, cantidad_paginas_ocupadas*config.tam_pagina, cantidad_paginas_solicitadas*config.tam_pagina);
         reducir_proceso(pid, paginas_a_reducir);
     } // si cantidad_paginas_solicitadas == cantidad_paginas_ocupadas NO se hace nada :)
     op_code respuesta_cpu = CONTINUAR;
@@ -255,8 +287,10 @@ void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new
 // AMPLIACION 
 void ampliar_proceso(uint32_t pid, int cantidad, uint32_t* marcos_solicitados){
     t_pcb* proceso = get_element_from_pid(pid);
-    for(int i = 0; i < cantidad; i++)
+    for(int i = 0; i < cantidad; i++){
         create_pagina(proceso->tabla_paginas, marcos_solicitados[i]); 
+        log_debug(logger, "cree una nueva pagina en la posicion %d de la tabla de pags. del proceso %u y le asigne el marco numero %u", list_size(proceso->tabla_paginas) - 1, proceso->pid, marcos_solicitados[i]);
+    }
 }
 
 void reducir_proceso(uint32_t pid, int cantidad){
@@ -278,9 +312,19 @@ void tiempo_espera_retardo(t_temporal* timer) {
     
     
 /*          ACCESO ESPACIO USUARIO            */
+uint32_t calcular_tamanio_dato_lectura(t_sbuffer* buffer, int cantidad_peticiones){
+    uint32_t offset_original = buffer->offset, tamanio_buffer = 0;
+    for (int i = 0; i < cantidad_peticiones; i++){
+        buffer_read_uint32(buffer); // lee la dir. fisica pero acá no la trabaja (sólo se hace para avanzar el offset!!!)
+        uint32_t bytes_peticion = buffer_read_uint32(buffer);
+        tamanio_buffer += bytes_peticion;
+    }
+    buffer->offset = offset_original;
+    return tamanio_buffer;    
+}
+
 // uint32_t marco*tam_pagina + offset
-// dir. marco*tam_pangina + offset
-void* leer_memoria(uint32_t dir_fisica, int tam_lectura){
+void* leer_memoria(uint32_t dir_fisica, uint32_t tam_lectura){
     void* dato = malloc(tam_lectura);
     // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
     memcpy(dato, memoria + dir_fisica, tam_lectura);
@@ -288,14 +332,15 @@ void* leer_memoria(uint32_t dir_fisica, int tam_lectura){
 }
 
 
-int escribir_memoria(uint32_t dir_fisica, void* dato, int tam_escritura){
+int escribir_memoria(uint32_t dir_fisica, void* dato, uint32_t tam_escritura){
     // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
     memcpy(memoria + dir_fisica, dato, tam_escritura);
 
     void* dato_escrito = leer_memoria(dir_fisica, tam_escritura);
-    if(!dato_escrito)
+    if(!dato_escrito){
+        log_debug(logger, "parece que no se escribio bien");
         return DESALOJAR;
-    else {
+    } else {
         log_debug(logger, "lo que acabamos de escribir ¿? %s .", (char*)dato_escrito);
         return CONTINUAR;
     }

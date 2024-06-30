@@ -18,8 +18,8 @@ void log_creacion_destruccion_de_tabla_de_pagina(t_log* logger, uint32_t pid, in
 };
 
 
-void log_acceso_a_tabla_de_pagina(t_log* logger, uint32_t, char* pagina, char* marco){
-
+void log_acceso_a_tabla_de_pagina(t_log* logger, uint32_t proceso, int pagina, uint32_t marco){
+    log_info(logger, "PID: %u - Pagina: %d - Marco: %u", proceso, pagina, marco);
 };
 
 void log_ampliacion_de_proceso(t_log* logger, uint32_t pid){

@@ -99,6 +99,8 @@ void liberar_paginas(t_pcb* proceso_a_liberar, int cantidad_paginas_a_liberar){
         bitarray_clean_bit(bitmap_marcos, pagina_liberada->id_marco); 
         // No se borran los datos del marco
 
+        log_debug(logger, "libere la pagina de la posicion %d de la tabla de pags. del proceso %u que guardaba el marco %u", i, proceso_a_liberar->pid,  pagina_liberada->id_marco);
+
         // LIBERA/ELIMINA página
         free(pagina_liberada);      
     }
@@ -141,6 +143,7 @@ t_pcb* get_element_from_pid(uint32_t pid_buscado){
 uint32_t obtener_marco_proceso(uint32_t proceso, int pagina){
     t_pcb* proceso_tabla = get_element_from_pid(proceso);
     t_pagina* pagina_tabla = list_get(proceso_tabla->tabla_paginas, pagina);
+    log_acceso_a_tabla_de_pagina(logger, proceso, pagina, pagina_tabla->id_marco);
     // todo: que pasa si retorna NULL?? creo que en un issue vi que no van a pedir datos de paginas no existentes en un proceso
     return pagina_tabla->id_marco;
 }

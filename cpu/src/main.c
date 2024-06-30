@@ -295,9 +295,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t valor_a_escribir = obtener_valor_registro(registro_dato);
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_respuesta_mmu respuesta_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
+            t_sbuffer* buffer_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
             
-            cargar_paquete(conexion_memoria, PETICION_ESCRITURA, respuesta_mmu.buffer_peticiones);
+            cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             /* analizar si le puede mandar algún error
             switch (recibir_operacion_memoria){
@@ -316,9 +316,9 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t bytes_a_leer = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_respuesta_mmu respuesta_mmu = mmu("LEER", direccion_logica, bytes_a_leer, 0);
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, bytes_a_leer, 0);
             
-            cargar_paquete(conexion_memoria, PETICION_LECTURA, respuesta_mmu.buffer_peticiones);
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             switch (recibir_operacion_memoria){
                 /* analizar si le puede mandar algún error
@@ -327,10 +327,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                         desalojo = 1;
                     break;
                 */
-            case CONTINUAR: 
+            case PETICION_LECTURA: 
                 // TODO: acá le va a responder con un buffer cargado con el valor leído de memoria, y la idea es que se lo guarde en el registro de la instruccion 
                 // por cada peticion de lectura se devuelve un contenido del buffer, la cantidad de peticiones la obtenemos a partir del dato que devolvió el mmu
-                int cantidad_peticiones = respuesta_mmu.cantidad_peticiones;
+                
                 // con esto haríamos un for y leeríamos uno a uno los datos (ya que quizás vienen divididos) para escribirlo en el registro
                 break;
             }
@@ -595,21 +595,23 @@ void* recibir_interrupcion(void* conexion){
     return NULL;
 }
 
-t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
+t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
     uint32_t dato_a_escribir = dato_escribir;
     int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
     int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
     
     int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
 
-    uint32_t tamanio_buffer = sizeof(int) + // cantidad de peticiones
+    uint32_t tamanio_buffer = sizeof(uint32_t) + // pid proceso!
+        sizeof(int) + // cantidad de peticiones
         sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
-        sizeof(uint32_t) * cantidad_peticiones_memoria; // bytes de lectura/escritura por petición
+        sizeof(uint32_t) * cantidad_peticiones_memoria; // bytes de lectura/escritura por petición (para el void* su tamanio o para lectura sólo bytes)
     if(strcmp(operacion, "ESCRIBIR") == 0)
-        tamanio_buffer += sizeof(bytes_peticion);
+        tamanio_buffer += sizeof(bytes_peticion); // le agrego el tamanio total de todos los void* que voy a pasar
 
     t_sbuffer* buffer_direcciones_fisicas = buffer_create(tamanio_buffer);
 
+    buffer_add_uint32(buffer_direcciones_fisicas, pid_proceso);
     buffer_add_int(buffer_direcciones_fisicas, cantidad_peticiones_memoria);
     t_tlb* entrada_tlb;
 
@@ -627,9 +629,11 @@ t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t b
 
         uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
         buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
-        buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion);
         if(strcmp(operacion, "ESCRIBIR") == 0) 
-            buffer_add_void(buffer_direcciones_fisicas, &dato_a_escribir, bytes_peticion);
+            buffer_add_void(buffer_direcciones_fisicas, &dato_a_escribir, bytes_peticion); // el void* + su tamanio (bytes_peticion)
+        else 
+            buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion); // sólo su tamanio si es lectura
+        
     } else {
         void* datos_a_enviar = NULL; // acá se va a reservar el "cacho" del dato que se va a pasar por petición (si es que la peticion es de tipo ESCRIBIR)
         void* dato_enviar = &dato_a_escribir; // guardo una referencia del dato completo que se va a enviar para pasarlo de a partes
@@ -659,24 +663,22 @@ t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t b
 
             uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
             buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
-            buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion);
             if(strcmp(operacion, "ESCRIBIR") == 0) {
                 // Toma del contenido de dato_enviar los primeros N (=bytes_a_enviar_por_peticion) bytes y deja el resto almacenado en dato_enviar para la próxima peticion de escritura
                 datos_a_enviar = malloc(bytes_a_enviar_por_peticion);
                 memcpy(datos_a_enviar, dato_enviar + bytes_enviados, bytes_a_enviar_por_peticion);
                 buffer_add_void(buffer_direcciones_fisicas, datos_a_enviar, bytes_a_enviar_por_peticion);
                 free(datos_a_enviar); // para la próxima petición
-            }
+            } else
+                buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion); // sólo su tamanio si es lectura
+
             bytes_pendientes-= bytes_a_enviar_por_peticion;
             bytes_enviados+=bytes_a_enviar_por_peticion;
             nro_pagina++; // próxima petición a la página siguiente
             desplazamiento = 0; // las páginas nuevas siempre parten de su offset 0
         }
     }
-    t_respuesta_mmu respuesta;
-    respuesta.cantidad_peticiones = cantidad_peticiones_memoria;
-    respuesta.buffer_peticiones = buffer_direcciones_fisicas;
-    return respuesta;
+    return buffer_direcciones_fisicas;
 }
 
 uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
