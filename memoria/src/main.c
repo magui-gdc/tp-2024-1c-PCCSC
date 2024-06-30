@@ -156,9 +156,19 @@ void *atender_cliente(void *cliente){
             buffer_destroy(buffer_resize);
         break;
         case TLB_MISS: // CPU
-            // recibe pid + nro_pagina y va 
-            // get_element_by_pid(pid)
-            // devuelve número marco a cpu
+            timer = temporal_create();
+            t_sbuffer* buffer_tlb_miss = cargar_buffer(cliente_recibido);
+            uint32_t proceso_tlb_miss = buffer_read_uint32(buffer_tlb_miss);
+            int pagina = buffer_read_int(buffer_tlb_miss);
+
+            uint32_t marco = obtener_marco_proceso(proceso_tlb_miss, pagina);
+
+            t_sbuffer* buffer_marco_solicitado = buffer_create(sizeof(uint32_t));
+            buffer_add_uint32(buffer_marco_solicitado, marco);
+            tiempo_espera_retardo(timer);
+            cargar_paquete(cliente_recibido, MARCO_SOLICITADO, buffer_marco_solicitado);
+
+            buffer_destroy(buffer_tlb_miss);
         break;
         case PETICION_ESCRITURA: // CPU / IO
         /*

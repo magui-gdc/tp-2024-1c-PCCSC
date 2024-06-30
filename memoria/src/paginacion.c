@@ -138,6 +138,13 @@ t_pcb* get_element_from_pid(uint32_t pid_buscado){
     return encontrado; 
 }
 
+uint32_t obtener_marco_proceso(uint32_t proceso, int pagina){
+    t_pcb* proceso_tabla = get_element_from_pid(proceso);
+    t_pagina* pagina_tabla = list_get(proceso_tabla->tabla_paginas, pagina);
+    // todo: que pasa si retorna NULL?? creo que en un issue vi que no van a pedir datos de paginas no existentes en un proceso
+    return pagina_tabla->id_marco;
+}
+
 void remover_y_eliminar_elementos_de_lista(t_list* lista_original){
     t_list_iterator* iterator = list_iterator_create(lista_original);
     while (list_iterator_has_next(iterator)) {

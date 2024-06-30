@@ -87,9 +87,6 @@ int main(int argc, char* argv[]) {
             pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
             buffer_read_registros(buffer_dispatch, &(registros)); // cargo contexto del proceso en los registros de la CPU
 
-            // a modo de log: CAMBIAR DESPUÉS
-            log_debug(logger, "Recibi para ejecutar el proceso %u, junto a PC %u", pid_proceso, registros.PC);
-
             // comienzo ciclo instrucciones
             while(seguir_ejecucion){
                 ciclo_instruccion(cliente_kernel); // supongo que lo busca con PID en memoria (ver si hay que pasar la PATH en realidad, y si ese dato debería ir en el buffer y en el pcb de kernel)
@@ -141,6 +138,7 @@ void inicializar_registros(){
 void ciclo_instruccion(int conexion_kernel){
     // ---------------------- ETAPA FETCH ---------------------- //
     // 1. FETCH: búsqueda de la sgte instrucción en MEMORIA (por valor del Program Counter pasado por el socket)
+    log_info(logger, "PID: %u - FETCH - Program Counter: %u", pid_proceso, registros.PC); 
     // provisoriamente, le pasamos PID y PC a memoria, con codigo de operación LEER_PROCESO
     t_sbuffer *buffer = buffer_create(
         sizeof(uint32_t) * 2 // PID + PC
@@ -598,68 +596,79 @@ void* recibir_interrupcion(void* conexion){
 }
 
 t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
+    uint32_t dato_a_escribir = dato_escribir;
     int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
     int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
     
     int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
-    t_sbuffer* buffer_direcciones_fisicas = buffer_create(
-        sizeof(int) + // cantidad de peticiones
-        sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
-        sizeof(uint32_t) * cantidad_peticiones_memoria // bytes a leer/escribir por peticion
-    );
 
-    if(strcmp(operacion, "ESCRIBIR") == 0) {
-    /* // TODO: este dato debería ser un VOID* ¿? ANALIZAR (dejo comentado por el sizeof)
-        uint32_t new_size = buffer_direcciones_fisicas->size + sizeof(uint32_t) * cantidad_peticiones_memoria; // dato a escribir por peticion
-        buffer_direcciones_fisicas->stream = realloc(buffer_direcciones_fisicas->stream, new_size);
-        buffer_direcciones_fisicas->size = new_size;
-    */
-    }
+    uint32_t tamanio_buffer = sizeof(int) + // cantidad de peticiones
+        sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
+        sizeof(uint32_t) * cantidad_peticiones_memoria; // bytes de lectura/escritura por petición
+    if(strcmp(operacion, "ESCRIBIR") == 0)
+        tamanio_buffer += sizeof(bytes_peticion);
+
+    t_sbuffer* buffer_direcciones_fisicas = buffer_create(tamanio_buffer);
+
     buffer_add_int(buffer_direcciones_fisicas, cantidad_peticiones_memoria);
     t_tlb* entrada_tlb;
 
     if(cantidad_peticiones_memoria == 1){
+        // 1. Verifica si la página está en la TLB
         entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
         if(!entrada_tlb){
-            // TODO: enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
-            // TODO: agregar entrada a TLB según algoritmo de TLB
-            // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
-        } 
+            log_info(logger, "PID: %u - TLB MISS - Pagina: %d", pid_proceso, nro_pagina);
+            // A. Enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+            uint32_t marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
+            // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
+            entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
+        } else
+            log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+
         uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
         buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
         buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion);
-        // TODO: if(strcmp(operacion, "ESCRIBIR") == 0) buffer_add_uint32(buffer_direcciones_fisicas, dato_escribir); // TODO: analizar si está bien cómo se está pasando el tipo de dato para recibirlo correctamente del otro lado (esto porque en ese parámetro se pude haber tomado un valor tanto desde registro UINT8 como UINT32): creo que se debería pasar como un void* ver ISSUE https://github.com/sisoputnfrba/foro/issues/3781
+        if(strcmp(operacion, "ESCRIBIR") == 0) 
+            buffer_add_void(buffer_direcciones_fisicas, &dato_a_escribir, bytes_peticion);
     } else {
+        void* datos_a_enviar = NULL; // acá se va a reservar el "cacho" del dato que se va a pasar por petición (si es que la peticion es de tipo ESCRIBIR)
+        void* dato_enviar = &dato_a_escribir; // guardo una referencia del dato completo que se va a enviar para pasarlo de a partes
         uint32_t bytes_pendientes = bytes_peticion;
-        uint32_t bytes_a_enviar_por_peticion;
+        uint32_t bytes_a_enviar_por_peticion = 0;
+        uint32_t bytes_enviados = 0;
         for (int i = 0; i < cantidad_peticiones_memoria; i++){
            if(i == 0) // en esta primera vuelta consumo el espacio restante a partir del offset de la primera página
                 bytes_a_enviar_por_peticion = TAM_PAGINA - desplazamiento; // los bytes que entran en la primera página a partir del offset dado
-           else // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
+           else { // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
                 if(i < cantidad_peticiones_memoria)
                     bytes_a_enviar_por_peticion = TAM_PAGINA;
                 else 
                     bytes_a_enviar_por_peticion = bytes_pendientes;
-            
+           }
 
-            if(strcmp(operacion, "ESCRIBIR") == 0) {
-                void* datos_a_enviar;
-                // TODO: acá debería tomar del contenido de datos_escribir los primeros N (=bytes_a_enviar_por_peticion) bytes y dejar el resto almacenado para la próxima peticion de escritura
-                // todo se va a cargar en datos_a_enviar
-            }
-
+            // 1. Verifica existencia en TLB
             entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
             if(!entrada_tlb){
-                // TODO: enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
-                // TODO: agregar entrada a TLB según algoritmo de TLB
-                // cargar en entrada_tlb la nueva entrada registrada para dicho proceso y página
-            } 
+                log_info(logger, "PID: %u - TLB MISS - Pagina: %d", pid_proceso, nro_pagina);
+                // 1. Enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+                uint32_t marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
+                // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
+                entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
+            } else
+                log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+
             uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
             buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
             buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion);
-            // TODO -> ESCRIBIR => cómo se envía datos_a_enviar según lo cargado en los pasos anteriores   
-
+            if(strcmp(operacion, "ESCRIBIR") == 0) {
+                // Toma del contenido de dato_enviar los primeros N (=bytes_a_enviar_por_peticion) bytes y deja el resto almacenado en dato_enviar para la próxima peticion de escritura
+                datos_a_enviar = malloc(bytes_a_enviar_por_peticion);
+                memcpy(datos_a_enviar, dato_enviar + bytes_enviados, bytes_a_enviar_por_peticion);
+                buffer_add_void(buffer_direcciones_fisicas, datos_a_enviar, bytes_a_enviar_por_peticion);
+                free(datos_a_enviar); // para la próxima petición
+            }
             bytes_pendientes-= bytes_a_enviar_por_peticion;
+            bytes_enviados+=bytes_a_enviar_por_peticion;
             nro_pagina++; // próxima petición a la página siguiente
             desplazamiento = 0; // las páginas nuevas siempre parten de su offset 0
         }
@@ -668,6 +677,38 @@ t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t b
     respuesta.cantidad_peticiones = cantidad_peticiones_memoria;
     respuesta.buffer_peticiones = buffer_direcciones_fisicas;
     return respuesta;
+}
+
+uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
+    t_sbuffer* buffer_marco = buffer_create(
+        sizeof(uint32_t) + // pid proceso
+        sizeof(int) // pagina
+    );
+
+    buffer_add_uint32(buffer_marco, proceso);
+    buffer_add_int(buffer_marco, pagina);
+    cargar_paquete(conexion_memoria, TLB_MISS, buffer_marco);
+
+    int respuesta_memoria_marco = recibir_operacion(conexion_memoria);
+    if(respuesta_memoria_marco == MARCO_SOLICITADO){
+        t_sbuffer* buffer_marco_solicitado = cargar_buffer(conexion_memoria);
+        uint32_t marco = buffer_read_uint32(buffer_marco_solicitado);
+        log_info(logger, "PID: %u - OBTENER MARCO - Página: %d - Marco: %u", proceso, pagina, marco);
+        buffer_destroy(buffer_marco_solicitado);
+        return marco;
+    } // TODO: considerar errores!!!
+}
+
+t_tlb* agregar_marco_tlb(uint32_t proceso, int pagina, uint32_t marco){
+    // TODO: por ahora la agrego sin importar algoritmo ni tamaño de la tabla (agregar estos cálculos => cada vez que se saca una entrada para reemplazarla por otra hay que liberar espacio dinámico!)
+
+    t_tlb* nueva_entrada_tlb = malloc(sizeof(t_tlb));
+    nueva_entrada_tlb->pid = proceso;
+    nueva_entrada_tlb->pagina = pagina;
+    nueva_entrada_tlb->marco = marco;
+
+    list_add(tlb_list, nueva_entrada_tlb);
+    return nueva_entrada_tlb;
 }
 
 t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina){

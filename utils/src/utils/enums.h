@@ -30,9 +30,8 @@ typedef enum{
 	IO_LIBERAR, // io - kernel (luego de terminar de ejecutar la instrucción IO exitosamente)
 	DESALOJAR, // KERNEL - CPU 
 	CONTINUAR, // KERNEL - CPU
-	PEDIR_FRAME, // CPU - MEMORIA
 	TLB_MISS, //CPU - MEMORIA
-	FRAME_SOLICIDATO, // MEMORIA - CPU+
+	MARCO_SOLICITADO, // MEMORIA - CPU
 	MOV_IN, 
 	MOV_OUT,
 	RESIZE,

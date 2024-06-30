@@ -21,7 +21,7 @@ typedef struct {
 
 typedef struct {
     uint32_t pid;
-    uint32_t pagina;
+    int pagina;
     uint32_t marco;
     // struct timespec timestamp; // Timestamp para registrar el tiempo de acceso con precisión en nanosegundos PARA LRU
     uint8_t fifo; // si la lista está vacía se le asigna 1 a este valor (primer valor ingresado); cuando se saque dicho elemento (se llenó la TLB y se debe elegir qué elemento sacar) se pasa el valor 1 al siguiente elemento de la lista => FIFO
@@ -56,5 +56,9 @@ t_list* filtrar_y_remover_lista(t_list* lista_original, bool(*condicion)(void*, 
 // consulta además en el TLB
 t_respuesta_mmu mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir); // ver si después se pasa en algún momento char* desde acá!!
 
+// manda socket PEDIR_MARCO a memoria y retorna el número de marco encontrado para el proceso y su pagina
+uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina);
 // buscar en TLB por PID + página
 t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina);
+// agrega el marco según el algoritmo para la TLB
+t_tlb* agregar_marco_tlb(uint32_t proceso, int pagina, uint32_t marco); 
