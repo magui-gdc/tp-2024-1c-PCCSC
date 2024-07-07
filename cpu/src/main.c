@@ -321,18 +321,43 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             switch (recibir_operacion_memoria){
-                /* analizar si le puede mandar algún error
-                    case ERROR_MEMORIA: 
-                        seguir_ejecucion = 0;
-                        desalojo = 1;
-                    break;
-                */
-            case PETICION_LECTURA: 
-                // TODO: acá le va a responder con un buffer cargado con el valor leído de memoria, y la idea es que se lo guarde en el registro de la instruccion 
-                // por cada peticion de lectura se devuelve un contenido del buffer, la cantidad de peticiones la obtenemos a partir del dato que devolvió el mmu
-                
-                // con esto haríamos un for y leeríamos uno a uno los datos (ya que quizás vienen divididos) para escribirlo en el registro
+                case PETICION_LECTURA: 
+                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
+                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+                    
+                    void* peticion_completa = malloc(bytes_a_leer);
+                    uint32_t bytes_recibidos = 0;
+                    for (size_t i = 0; i < cantidad_peticiones; i++){
+                        uint32_t bytes_peticion;
+                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+                        bytes_recibidos += bytes_peticion;
+                        free(dato_peticion);
+                    }
+
+                    // se asigna el valor al registro que corresponda
+                    char valor_leido_str[16];
+                    if (bytes_a_leer == 1) {
+                        uint8_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, bytes_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
+                    } else {
+                        uint32_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, bytes_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
+                    }
+
+                    set(registro_dato, valor_leido_str);
+                    free(peticion_completa);
                 break;
+                /* analizar si le puede mandar algún error
+                case ERROR_MEMORIA: 
+                    seguir_ejecucion = 0;
+                    desalojo = 1;
+                break;
+                */
             }
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
@@ -385,6 +410,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t reg_d = obtener_valor_registro(tokens[2]);
             uint32_t reg_t = obtener_valor_registro(tokens[3]);
             //io_stdin_read(nombre_interfaz, registro_direccion, registro_tamaño);
+            
             t_sbuffer *buffer_interfaz_stdin_read = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
                 sizeof(uint32_t) * 2 // REGISTROS PARA IO
@@ -697,6 +723,7 @@ uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
         uint32_t marco = buffer_read_uint32(buffer_marco_solicitado);
         log_info(logger, "PID: %u - OBTENER MARCO - Página: %d - Marco: %u", proceso, pagina, marco);
         buffer_destroy(buffer_marco_solicitado);
+        // TODO: dependiendo el algoritmo actualizar timestamp!!!!!
         return marco;
     } // TODO: considerar errores!!!
 }

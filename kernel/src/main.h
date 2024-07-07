@@ -53,7 +53,7 @@ typedef struct {
     uint32_t pid;
     e_estado_proceso estado;
     t_registros_cpu registros;
-    uint8_t quantum;
+    uint32_t quantum;
     cod_desalojo desalojo; 
     char path[256];
     int* recursos; // array que guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando

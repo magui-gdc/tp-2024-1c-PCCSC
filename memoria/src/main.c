@@ -5,6 +5,7 @@
 #include "main.h"
 
 pthread_t thread_memoria;
+// declarar sem
 
 int main(int argc, char *argv[]){
 
@@ -13,7 +14,7 @@ int main(int argc, char *argv[]){
     cargar_config_struct_MEMORIA(archivo_config);
     logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
     decir_hola("Memoria");
-    
+    // TODO: init semaforo
     init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
 
     // ------ INICIALIZACIÓN SERVIDOR + HILO ESCUCHA ------ //
@@ -32,6 +33,7 @@ int main(int argc, char *argv[]){
     log_destroy(logger);
     config_destroy(archivo_config);
     bitarray_destroy(bitmap_marcos);
+    // TODO: FREE SEMAFORO
 
     return EXIT_SUCCESS;
 }
@@ -185,6 +187,7 @@ void *atender_cliente(void *cliente){
                 log_info(logger, "PID: %u - Accion: ESCRIBIR - Direccion fisica: %u - Tamaño %u", proceso_peticion_escritura, direccion_fisica, bytes_peticion);
                 escribir_memoria(direccion_fisica, dato_escritura, bytes_peticion);
 
+                free(dato_escritura); // va liberando memoria ya escrita!
                 tiempo_espera_retardo(timer);
             }
 
@@ -214,7 +217,7 @@ void *atender_cliente(void *cliente){
                 log_info(logger, "PID: %u - Accion: LEER - Direccion fisica: %u - Tamaño %u", proceso_peticion_lectura, direccion_fisica, bytes_peticion);
                 void* dato_leido = leer_memoria(direccion_fisica, bytes_peticion);
                 buffer_add_void(buffer_datos_lectura, dato_leido, bytes_peticion);
-                free(dato_leido);
+                free(dato_leido); // va liberando memoria ya cargada en buffer!
 
                 tiempo_espera_retardo(timer);
             }
@@ -255,7 +258,7 @@ void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new
     
     // 2. Analizar si corresponde ampliar o reducir el proceso
     int cantidad_paginas_ocupadas = cant_paginas_ocupadas_proceso(pid); // paginas ocupadas por el proceso
-    int cantidad_paginas_solicitadas = (int)ceil((double)(new_size / config.tam_pagina)); // paginas que se necesitan con el nuevo valor del resize
+    int cantidad_paginas_solicitadas = (int)ceil((double)new_size / config.tam_pagina); // paginas que se necesitan con el nuevo valor del resize
     
     if (cantidad_paginas_solicitadas > cantidad_paginas_ocupadas){
         int paginas_a_aumentar = cantidad_paginas_solicitadas - cantidad_paginas_ocupadas;
