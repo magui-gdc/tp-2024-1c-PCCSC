@@ -626,7 +626,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
     int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
     int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
     
-    int cantidad_peticiones_memoria = (int)ceil((desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
+    int cantidad_peticiones_memoria = (int)ceil((double)(desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
 
     uint32_t tamanio_buffer = sizeof(uint32_t) + // pid proceso!
         sizeof(int) + // cantidad de peticiones
@@ -670,7 +670,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
            if(i == 0) // en esta primera vuelta consumo el espacio restante a partir del offset de la primera página
                 bytes_a_enviar_por_peticion = TAM_PAGINA - desplazamiento; // los bytes que entran en la primera página a partir del offset dado
            else { // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
-                if(i < cantidad_peticiones_memoria)
+                if(i < --cantidad_peticiones_memoria)
                     bytes_a_enviar_por_peticion = TAM_PAGINA;
                 else 
                     bytes_a_enviar_por_peticion = bytes_pendientes;
