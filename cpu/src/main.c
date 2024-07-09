@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include <pthread.h>
+#include <sys/time.h>
 #include "main.h"
 #include "instrucciones.h"
+
 
 t_list* tlb_list;
 int TAM_MEMORIA;
@@ -52,17 +54,13 @@ int main(int argc, char* argv[]) {
     // conexion dispatch
     int socket_servidor_dispatch = iniciar_servidor(config.puerto_escucha_dispatch);
     inicializar_registros();
-    log_info(logger, config.puerto_escucha_dispatch);
-    log_info(logger, "Server CPU DISPATCH");
+    log_info(logger, "Server CPU DISPATCH, puerto %s", config.puerto_escucha_dispatch);
 
-    
     // conexion interrupt
     int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
-    log_info(logger, config.puerto_escucha_interrupt);
-    log_info(logger, "Server CPU INTERRUPT"); 
+    log_info(logger, "Server CPU INTERRUPT, puerto %s", config.puerto_escucha_interrupt); 
 
     // hilo que recibe las interrupciones y las guarda en una 'lista' de interrupciones (PIC: Programmable Integrated Circuited) 
-                                                // -> (ANALIZAR BAJO QUÉ CRITERIO: ¿se podría agregar ordenado por PID y BIT DE PRIORIDAD?)
     pthread_create(&thread_interrupt, NULL, recibir_interrupcion, &socket_servidor_interrupt); 
     pthread_detach(thread_interrupt);
 
@@ -117,7 +115,7 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
     config.puerto_escucha_dispatch = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_DISPATCH");
     config.puerto_escucha_interrupt = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_INTERRUPT");
-    config.cantidad_entradas_tlb = config_get_string_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
+    config.cantidad_entradas_tlb = config_get_int_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
 
@@ -298,7 +296,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer* buffer_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
             
             cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu);
-            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            recibir_operacion(conexion_memoria); // espera respuesta de memoria
             /* analizar si le puede mandar algún error
             switch (recibir_operacion_memoria){
             case ERROR_MEMORIA: 
@@ -650,8 +648,13 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
             uint32_t marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
             // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
             entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
-        } else
+        } else{
             log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+            if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
+                entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
+                log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+            }
+        }
 
         uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
         buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
@@ -684,8 +687,13 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
                 uint32_t marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
                 // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
                 entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
-            } else
+            } else{
                 log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+                if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
+                    entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
+                    log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+                }
+            }
 
             uint32_t direccion_fisica = entrada_tlb->marco * TAM_PAGINA + desplazamiento;
             buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
@@ -707,6 +715,12 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
     return buffer_direcciones_fisicas;
 }
 
+uint64_t obtener_timestamp() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000ULL + tv.tv_usec;
+}
+
 uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
     t_sbuffer* buffer_marco = buffer_create(
         sizeof(uint32_t) + // pid proceso
@@ -723,18 +737,40 @@ uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
         uint32_t marco = buffer_read_uint32(buffer_marco_solicitado);
         log_info(logger, "PID: %u - OBTENER MARCO - Página: %d - Marco: %u", proceso, pagina, marco);
         buffer_destroy(buffer_marco_solicitado);
-        // TODO: dependiendo el algoritmo actualizar timestamp!!!!!
         return marco;
     } // TODO: considerar errores!!!
+
+    return 0;
+}
+
+void remover_entrada_segun_algoritmo(){
+    int index_mas_viejo = -1;
+    uint64_t min_timestamp = UINT64_MAX;
+    for (int i = 0; i < list_size(tlb_list); i++) {
+        t_tlb* entrada = (t_tlb*)list_get(tlb_list, i);
+        if (entrada->timestamp < min_timestamp) {
+            min_timestamp = entrada->timestamp;
+            index_mas_viejo = i;
+        }
+    }
+
+    t_tlb* entrada_eliminada = (t_tlb*)list_remove(tlb_list, index_mas_viejo);
+    if (entrada_eliminada != NULL) {
+        log_debug(logger, "se elimina la entrada del proceso %u pagina %d", entrada_eliminada->pid, entrada_eliminada->pagina);
+        free(entrada_eliminada);
+    }
 }
 
 t_tlb* agregar_marco_tlb(uint32_t proceso, int pagina, uint32_t marco){
-    // TODO: por ahora la agrego sin importar algoritmo ni tamaño de la tabla (agregar estos cálculos => cada vez que se saca una entrada para reemplazarla por otra hay que liberar espacio dinámico!)
+    // si la TLB ya está llena => sustitución por algoritmo (se saca la entrada con timestamp más viejo)
+    if(list_size(tlb_list) == config.cantidad_entradas_tlb)
+        remover_entrada_segun_algoritmo();
 
     t_tlb* nueva_entrada_tlb = malloc(sizeof(t_tlb));
     nueva_entrada_tlb->pid = proceso;
     nueva_entrada_tlb->pagina = pagina;
     nueva_entrada_tlb->marco = marco;
+    nueva_entrada_tlb->timestamp = obtener_timestamp();
 
     list_add(tlb_list, nueva_entrada_tlb);
     return nueva_entrada_tlb;

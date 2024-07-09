@@ -28,6 +28,7 @@ typedef struct {
     char* tipo_interfaz;
     int socket_interfaz;
     int disponibilidad; // 0: si esta libre; 1: si está siendo usado por otro proceso
+    uint32_t pid_ejecutando;
     t_mqueue* cola_bloqueados;
 } t_interfaz;
 
@@ -41,6 +42,7 @@ typedef struct{
     char* algoritmo_planificacion;
     char** recursos;
     int quantum;
+    char* path_scripts;
 } config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
 typedef struct {

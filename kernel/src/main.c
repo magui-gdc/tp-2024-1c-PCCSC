@@ -4,12 +4,6 @@
 #include <commons/temporal.h>
 #include "logs.h" // logs incluye el main.h de kernel
 
-/* TODO:
-REVISAR BIEN QUE FUNCIONE OK COMANDOS DE MULTIPROGRAMACION 
-ESTÁ TODO LO DE IO DEL LADO DE KERNEL, QUEDA PENDIENTE PROBAR IO_GEN_SLEEP (el único programado por el momento)
-HACER TODO LO DE MEMORIA DEL LADO KERNEL
-*/
-
 // ---------- CONSTANTES ---------- //
 const char *estado_proceso_strings[] = {
     "NEW", 
@@ -184,6 +178,7 @@ void cargar_config_struct_KERNEL(t_config *archivo_config){
     config.algoritmo_planificacion = config_get_string_value(archivo_config, "ALGORITMO_PLANIFICACION");
     config.recursos = config_get_array_value(archivo_config, "RECURSOS");
     config.quantum = config_get_int_value(archivo_config, "QUANTUM");
+    config.path_scripts = config_get_string_value(archivo_config, "PATH_SCRIPTS");
 }
 // -------------------- FIN FCS. DE CONFIGURACION --------------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -202,21 +197,20 @@ void *consola_kernel(void *archivo_config){
             break;
         }
         interpretar_comando_kernel(leido, archivo_config);
+        free(leido);
+
     }
     return NULL;    
 }
 
-void interpretar_comando_kernel(char* leido, void *archivo_config)
-{
+void interpretar_comando_kernel(char* leido, void *archivo_config){
     char **tokens = string_split(leido, " ");
     char *comando = tokens[0];
-    if (comando != NULL)
-    {
+    if (comando != NULL){
         if (strcmp(comando, "EJECUTAR_SCRIPT") == 0 && string_array_size(tokens) >= 2){
             char *path = tokens[1];
             if (strlen(path) != 0 && path != NULL){
                 scripts_kernel(path, archivo_config);
-                printf("path ingresado (ejecutar_script): %s\n", path);
             }
         } // INICIAR_PROCESO /carpetaProcesos/proceso1
         else if (strcmp(comando, "INICIAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
@@ -225,13 +219,11 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                 // EN REALIDAD KERNEL MANDA A CREAR AL PROCESO EN MEMORIA CUANDO TOMA UN GRADO DE MULTIPROGRAMACIÓN PARA DICHO PROCESO (agrego buffer en largo plazo)
                 iniciar_proceso(path);
                 // ver funcion para comprobar existencia de archivo en ruta relativa en MEMORIA ¿acá o durante ejecución? => revisar consigna
-                printf("path ingresado (iniciar_proceso): %s\n", path);
             }
         } else if (strcmp(comando, "FINALIZAR_PROCESO") == 0 && string_array_size(tokens) >= 2){
                 char *pid_char = tokens[1], *endptr;
                 uint32_t valor_uint_pid = strtoul(pid_char, &endptr, 10);
                 if (strlen(pid_char) != 0 && pid_char != NULL && valor_uint_pid > 0 && *endptr == '\0'){
-                    printf("pid ingresado (finalizar_proceso): %s\n", pid_char);
                     
                     // 1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
                     if(PLANIFICACION_PAUSADA == 0){
@@ -243,7 +235,6 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                     t_pcb* proceso_buscado = buscar_pcb_por_pid(valor_uint_pid);
 
                     if (proceso_buscado){
-                        printf("obtengo proceso %u, en estado: %s\n", proceso_buscado->pid, (char *)estado_proceso_strings[proceso_buscado->estado] );
 
                     // 3. trabajo la solicitud de finalización según su estado
                     if(proceso_buscado->estado != EXIT){ // EXIT: Si ya está en EXIT no se debe procesar la solicitud
@@ -279,8 +270,7 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                             sem_post(&orden_proceso_exit);
                         }
                         }
-                    } else
-                        printf("pid no existente\n");
+                    }
 
                     // 4. inicio la planificacion
                     if(PLANIFICACION_PAUSADA == 0){
@@ -306,7 +296,6 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                 }
                 config_set_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION", valor);
                 config_save((t_config *)archivo_config);
-                printf("grado multiprogramacion cambiado a %s\n", valor);
             }
         }
         else if (strcmp(comando, "DETENER_PLANIFICACION") == 0){
@@ -314,18 +303,51 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
                 for(int j = 0; j < 4; j++) sem_wait(&mutex_planificacion_pausada[j]); // toma uno a uno los waits sólo si están liberados!
                 PLANIFICACION_PAUSADA = 1; // escritura
             }
-            printf("detener planificacion\n");
         }
         else if (strcmp(comando, "INICIAR_PLANIFICACION") == 0){
             if(PLANIFICACION_PAUSADA == 1) { 
                 for(int j = 0; j < 4; j++) sem_post(&mutex_planificacion_pausada[j]); // libero uno a uno los waits de otros hilos para continuar con la planificacion
                 PLANIFICACION_PAUSADA = 0; // escritura
             }
-            printf("iniciar planificacion\n");
         }
         else if (strcmp(comando, "PROCESO_ESTADO") == 0){
-            // estados_procesos()
-            printf("estados de los procesos\n");
+            // 1. detengo la planificación: así los procesos no cambian su estado ni pasan de una cola a otra!
+            if(PLANIFICACION_PAUSADA == 0)
+                for(int j = 0; j < 4; j++) sem_wait(&mutex_planificacion_pausada[j]); // toma uno a uno los waits sólo si están liberados!
+
+            t_list *listas_por_estado[5];
+    
+            // 2. Creo una lista por estado
+            for (int i = 0; i < 5; i++) {
+                listas_por_estado[i] = list_create();
+            }
+
+            // 3. Clasifico los procesos en las listas auxiliares según su estado
+            for (int i = 0; i < list_size(pcb_list); i++) {
+                t_pcb *proceso_estado = list_get(pcb_list, i);
+                list_add(listas_por_estado[proceso_estado->estado], proceso_estado);
+            }
+
+            // 4. Imprimo pid por estado en el orden de NEW a EXIT
+            for (int estado = NEW; estado <= EXIT; estado++) {
+                printf("Procesos en estado %s:\n", estado_proceso_strings[estado]);
+                for (int i = 0; i < list_size(listas_por_estado[estado]); i++) {
+                    t_pcb *proceso_imprimir_pid = list_get(listas_por_estado[estado], i);
+                    printf("PID: %u\n", proceso_imprimir_pid->pid);
+                }
+                printf("\n");
+            }
+
+            // 5. LIbero las listas auxiliares
+            for (int i = 0; i < 5; i++) {
+                list_destroy(listas_por_estado[i]);
+            }
+            
+            
+            // 6. inicio la planificacion
+            if(PLANIFICACION_PAUSADA == 0)
+                for(int j = 0; j < 4; j++) sem_post(&mutex_planificacion_pausada[j]); // libero los waits del resto de los hilos solo si antes los tome!
+
         }
     }
     string_array_destroy(tokens);
@@ -334,12 +356,9 @@ void interpretar_comando_kernel(char* leido, void *archivo_config)
 t_pcb* buscar_pcb_por_pid(uint32_t pid_buscado){
     bool comparar_pid(void *elemento){
         t_pcb *pcb = (t_pcb *)elemento;
-        //printf("tenemos el pid buscado %u y el pid actual %u\n", pid_buscado, pcb->pid);
         return pcb->pid == pid_buscado;
     }
     t_pcb* encontrado = (t_pcb*)list_find(pcb_list, comparar_pid);
-    //if(encontrado) 
-        //printf("encontramos el proceso %u\n", encontrado->pid);
     return encontrado; // si no funciona pasarlo como puntero a funcion
 }
 
@@ -391,20 +410,25 @@ void *planificar_largo_plazo(void *archivo_config){
 
 // ------------- INICIO FCS. HILO CONSOLA KERNEL -------------
 void scripts_kernel(char* ruta_archivo, void* archivo_config){
-    char* instruccion = malloc(50);
-    char datoLeido;
-    FILE* script = fopen(ruta_archivo, "rb+");
+    char* instruccion = NULL;
+    size_t len = 0;
+
+    char* path_script = malloc(strlen(config.path_scripts) + strlen(ruta_archivo) + 1);
+    strcpy(path_script, config.path_scripts);
+    strcat(path_script, ruta_archivo);
+
+    FILE* script = fopen(path_script, "r");
     if (script == NULL){
-        log_error(logger, "No se encontró ningún archivo con el nombre indicado...");
+        log_error(logger, "No se encontró ningún SCRIPT con el nombre indicado...");
     } else {
-        while (!feof(script)){
-            fread(&datoLeido, sizeof(char), sizeof(datoLeido), script);
-            if(datoLeido == '\n'){
-                printf("INSTRUCCION LEIDA %s", instruccion);
-                interpretar_comando_kernel(instruccion, archivo_config);
-            }
+        while (getline(&instruccion, &len, script) != -1){
+            interpretar_comando_kernel(instruccion, archivo_config);
+            free(instruccion);
+            instruccion = NULL;
         }
+        fclose(script);
     }
+    free(path_script);
 }
 
 void inicializar_registros(t_pcb* proceso) {
@@ -531,7 +555,7 @@ void algoritmo_vrr(){
     log_debug(logger, "estas en VRR");
     t_pcb* primer_elemento;
     if(!mqueue_is_empty(monitor_READY_VRR)){
-        primer_elemento = mqueue_pop(monitor_READY_VRR); // TODO: evaluar semáforo teniendo en cuenta donde se carga este monitor!!!
+        primer_elemento = mqueue_pop(monitor_READY_VRR); 
         quantum_en_microsegundos = primer_elemento->quantum * 1000; // toma el quantum restante de su PCB
         log_debug(logger, "tomo quantum restante del proceso!! %u", primer_elemento->quantum);
     } else {
@@ -602,7 +626,7 @@ void recibir_proceso_desalojado(){
     // 3. Carga motivo de desalojo!
     t_pcb* proceso_desalojado = mqueue_peek(monitor_RUNNING);
     sem_wait(&cambio_estado_desalojo);
-    proceso_desalojado->desalojo = DESALOJADO;
+    if(proceso_desalojado->desalojo == SIN_DESALOJAR) proceso_desalojado->desalojo = DESALOJADO;
     sem_post(&cambio_estado_desalojo);
 
     // Verifica nuevamente el estado de la planificación antes de procesar el desalojo
@@ -672,7 +696,7 @@ void recibir_proceso_desalojado(){
                         recupera_contexto_proceso(buffer_desalojo); // actualizo PCB
                         proceso_desalojado->estado = BLOCKED;
                         mqueue_push(cola_recursos_bloqueados[posicion_recurso], mqueue_pop(monitor_RUNNING));
-                        proceso_desalojado->cola_bloqueado = cola_recursos_bloqueados[posicion_recurso]; // TODO: SIMON HACER ALGO ASÍ PARA INTERFACES!!
+                        proceso_desalojado->cola_bloqueado = cola_recursos_bloqueados[posicion_recurso]; 
                         sem_post(&mutex_instancias_recursos); // libero acá porque puede ocurrir un SIGNAL desde plani largo plazo EXIT
                         log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "BLOCKED");
                         log_bloqueo_proceso(logger,proceso_desalojado->pid, recurso_solicitado);
@@ -716,6 +740,8 @@ void recibir_proceso_desalojado(){
                 break;
                 }
             }
+
+            free(recurso_solicitado);
 
             // 3. respuesta a CPU
             ssize_t bytes_enviados = send(conexion_cpu_dispatch, &respuesta_cpu, sizeof(respuesta_cpu), 0);
@@ -830,6 +856,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         recupera_contexto_proceso(buffer_desalojo);
         buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t));
         buffer_add_string(buffer_instruccion_io, length_file, nombre_file); // NOMBRE ARCHIVO FILE SYSTEM
+        free(nombre_file);
     } else if (instruccion == IO_FS_TRUNCATE){
         strcpy(tipo_interfaz, "DIALFS");
         uint32_t length_file;
@@ -838,6 +865,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         buffer_add_string(buffer_instruccion_io, length_file, nombre_file); // NOMBRE ARCHIVO FILE SYSTEM
         buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
         recupera_contexto_proceso(buffer_desalojo);
+        free(nombre_file);
     } else if (instruccion == IO_FS_WRITE || IO_FS_READ){
         strcpy(tipo_interfaz, "DIALFS");
         uint32_t length_file;
@@ -848,6 +876,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
         buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO PUNTERO ARCHIVO
         recupera_contexto_proceso(buffer_desalojo);
+        free(nombre_file);
     }
 
     log_debug(logger, "recibimos instruccion IO %d de tipo %s la interfaz %s.", instruccion, tipo_interfaz, interfaz_solicitada);
@@ -860,6 +889,8 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
     sem_wait(&mutex_interfaces_conectadas);
     t_interfaz* interfaz = (t_interfaz*)list_find(interfaces_conectadas, buscar_por_nombre);
     sem_post(&mutex_interfaces_conectadas);
+
+    free(interfaz_solicitada);
 
     if(!interfaz) { // la interfaz no existe o no está conectada
         mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
@@ -874,9 +905,11 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             sem_wait(&(interfaz->cola_bloqueados->mutex)); // bloqueo para que NO se libere este mismo proceso desde el hilo IO hasta que no tenga cargada su instrucción en caso de corresponder!!! y tmb para esperar el cambio de disponibilidad desde el otro hilo
             proceso_desalojado->estado = BLOCKED;
             queue_push(interfaz->cola_bloqueados->cola, mqueue_pop(monitor_RUNNING)); 
+            proceso_desalojado->cola_bloqueado = interfaz->cola_bloqueados;
             log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "BLOCKED");
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             if(interfaz->disponibilidad == 0) { // interfaz disponible! => NO había otro proceso bloqueado para dicha interfaz
+                interfaz->pid_ejecutando = proceso_desalojado->pid;
                 cargar_paquete(interfaz->socket_interfaz, instruccion, buffer_instruccion_io); // ya libera el buffer
                 interfaz->disponibilidad = 1; // interfaz ocupada!
                 sem_post(&(interfaz->cola_bloqueados->mutex));
@@ -908,7 +941,7 @@ void *planificar_new_to_ready(void *archivo_config)
 {
     while (1){
         sem_wait(&orden_planificacion_largo_plazo); // solo cuando hayan procesos en NEW
-        // 1. Tomo grado de multiprogramacion (TODO: devolver el grado de multiprogramacion si no se creo el proceso en memoria!!!)
+        // 1. Tomo grado de multiprogramacion 
         sem_wait(&contador_grado_multiprogramacion);
         sem_wait(&mutex_planificacion_pausada[0]);
 
@@ -924,7 +957,6 @@ void *planificar_new_to_ready(void *archivo_config)
 
         cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
         recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
-        // TODO: podría devolver alguna otra cosa distinta de CONTINUAR???
 
         // 3. Envía a READY
         primer_elemento->estado = READY;
@@ -976,6 +1008,12 @@ void *planificar_all_to_exit(void *args){
                 break;
             default:
                 break;
+        }
+        // puede ser que el proceso se haya mandado a finalizar cuando estaba bloqueado esperando un interfaz, en esos casos se debe liberar memoria
+        if(proceso_exit->instruccion_io != NULL){
+            buffer_destroy(proceso_exit->instruccion_io->buffer); // libera buffer del paquete
+            free(proceso_exit->instruccion_io); // libera paquete
+            proceso_exit->instruccion_io = NULL;
         }
         mqueue_pop(monitor_EXIT); // SACA PROCESO DE LA COLA EXIT
     }
@@ -1060,6 +1098,10 @@ void* atender_cliente(void* cliente){
             interfaz_conectada->socket_interfaz = cliente_recibido;
             interfaz_conectada->cola_bloqueados = mqueue_create();
             interfaz_conectada->disponibilidad = 0; 
+            interfaz_conectada->pid_ejecutando = 0; // por ponerle un valor, en realidad no importa esto en esta instancia y no modifica el resto
+
+            free(nombre_interfaz);
+            free(tipo_interfaz);
 
             // 2. Agregar interfaz a la lista
             sem_wait(&mutex_interfaces_conectadas);
@@ -1075,25 +1117,35 @@ void* atender_cliente(void* cliente){
         case IO_LIBERAR:
             log_debug(logger, "se desaloja interfaz %s.", interfaz->nombre_interfaz);
             sem_wait(&mutex_planificacion_pausada[2]); // continúa sólo si la planificación no está pausada
+            
             // 1. desbloquear proceso actual y mandarlo a READY (si es VRR manda a READY+)
             sem_wait(&(interfaz->cola_bloqueados->mutex)); // por si se está ingresando un proceso desde el manejo del desalojo en corto plazo
-            t_pcb* proceso_io = queue_pop(interfaz->cola_bloqueados->cola);
-            proceso_io->estado = READY;
+            // puede pasar que el proceso se haya mandado a finalizar mientras estaba en la interfaz!!
+            if(!queue_is_empty(interfaz->cola_bloqueados->cola)){
+                t_pcb* proceso_io_consulta_exit = queue_peek(interfaz->cola_bloqueados->cola); 
+                if(proceso_io_consulta_exit->pid == interfaz->pid_ejecutando){
+                    t_pcb* proceso_io = queue_pop(interfaz->cola_bloqueados->cola);
+                    proceso_io->estado = READY;
 
-            if(corresponde_timer_vrr == 1 && proceso_io->quantum < config.quantum){
-                mqueue_push(monitor_READY_VRR, proceso_io);
-                log_debug(logger, "se agrega a READY+ proceso %u", proceso_io->pid);
-            } else {
-                mqueue_push(monitor_READY, proceso_io);
-                log_debug(logger, "se agrega a READY proceso %u", proceso_io->pid );
+                    if(corresponde_timer_vrr == 1 && proceso_io->quantum < config.quantum){
+                        mqueue_push(monitor_READY_VRR, proceso_io);
+                        log_debug(logger, "se agrega a READY+ proceso %u", proceso_io->pid);
+                    } else {
+                        mqueue_push(monitor_READY, proceso_io);
+                        log_debug(logger, "se agrega a READY proceso %u", proceso_io->pid );
+                    }
+
+                    log_cambio_estado_proceso(logger, proceso_io->pid, "BLOCKED", "READY");
+                    sem_post(&orden_planificacion_corto_plazo); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
+                }
             }
-            log_cambio_estado_proceso(logger, proceso_io->pid, "BLOCKED", "READY");
-            sem_post(&orden_planificacion_corto_plazo); // RECORDAR ESTO PARA AVISARLE AL PLANI DE CORTO PLAZO QUE ENTRÓ ALGO EN READY
             sem_post(&mutex_planificacion_pausada[2]); // SE LIBERA PLANIFICACIÓN BLOCKED -> READY
 
             // 2. si hay un proceso bloqueado en la cola de esta interfaz, lo envías a la interfaz con el paquete que tenía cargado el proceso
             if(!queue_is_empty(interfaz->cola_bloqueados->cola)){
                 t_pcb* proceso_io_bloqueado = queue_peek(interfaz->cola_bloqueados->cola); // NO lo saca -> lo saca de la cola cuando desaloja la IO desde IO_LIBERAR
+                interfaz->pid_ejecutando = proceso_io_bloqueado->pid;
+                
                 void* a_enviar = malloc((proceso_io_bloqueado->instruccion_io->buffer->size) + sizeof(int) + sizeof(uint32_t)); // toma el buffer ya cargado para el proceso bloqueado
                 int offset = 0;
 
