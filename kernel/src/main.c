@@ -369,25 +369,27 @@ void *planificar_corto_plazo(void *archivo_config){
         sem_wait(&mutex_planificacion_pausada[1]); // continúa si no fue tomado el MUTEX desde DETENER_PLANIFICACION / FINALIZAR_PROCESO => no está pausada la planificación
 
         // 1. selecciona próximo proceso a ejecutar
-        algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
+        int proceso_a_ready = algoritmo_planificacion(); // ejecuta algorimo de planificacion corto plazo según valor del config
         sem_post(&mutex_planificacion_pausada[1]); // libero luego de hacer el cambio entre colas! 
+        
+        if(proceso_a_ready){
+            // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
+            enviar_proceso_a_cpu(); // send()
 
-        // 2. se manda el proceso seleccionado a CPU a través del puerto dispatch
-        enviar_proceso_a_cpu(); // send()
-
-        // 3. control QUANTUM una vez que el proceso está en EXEC!!! (sólo para RR o VRR)
-        if (corresponde_quantum == 1){ 
-            t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
-            if(corresponde_timer_vrr == 1 ) {
-                timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
-                log_debug(logger, "estas en quantum vrr creando el timer");
+            // 3. control QUANTUM una vez que el proceso está en EXEC!!! (sólo para RR o VRR)
+            if (corresponde_quantum == 1){ 
+                t_pcb* proceso_en_running = mqueue_peek(monitor_RUNNING);
+                if(corresponde_timer_vrr == 1 ) {
+                    timer_quantum = temporal_create(); // comienza a correr el cronómetro!! SÓLO PARA VRR
+                    log_debug(logger, "estas en quantum vrr creando el timer");
+                }
+                pthread_create(&hilo_quantum, NULL, control_quantum, &(proceso_en_running->pid));
+                pthread_detach(hilo_quantum);  
             }
-            pthread_create(&hilo_quantum, NULL, control_quantum, &(proceso_en_running->pid));
-            pthread_detach(hilo_quantum);  
-        }
 
-        // 4. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
-        recibir_proceso_desalojado(); // recv()
+            // 4. se aguarda respuesta de CPU para tomar una decisión y continuar con la ejecución de procesos
+            recibir_proceso_desalojado(); // recv()
+        } // else: el proceso o alguno de los procesos que estaba en READY fue eliminado por orden del usuario
     }
 }
 
@@ -422,6 +424,7 @@ void scripts_kernel(char* ruta_archivo, void* archivo_config){
         log_error(logger, "No se encontró ningún SCRIPT con el nombre indicado...");
     } else {
         while (getline(&instruccion, &len, script) != -1){
+            instruccion[strcspn(instruccion, "\n")] = '\0';
             interpretar_comando_kernel(instruccion, archivo_config);
             free(instruccion);
             instruccion = NULL;
@@ -542,30 +545,41 @@ fc_puntero obtener_algoritmo_planificacion(){
 }
 
 // tanto FIFO como RR sacan el primer proceso en READY y lo mandan a EXEC
-void algoritmo_fifo_rr() {
+int algoritmo_fifo_rr() {
     log_debug(logger, "estas en FIFO/RR");
-    t_pcb* primer_elemento = mqueue_pop(monitor_READY);
-    primer_elemento->estado = EXEC; 
-    mqueue_push(monitor_RUNNING, primer_elemento);
-    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
+    if(!mqueue_is_empty(monitor_READY)){
+        t_pcb* primer_elemento = mqueue_pop(monitor_READY);
+        primer_elemento->estado = EXEC; 
+        mqueue_push(monitor_RUNNING, primer_elemento);
+        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
+        return 1;
+    } 
+    return 0;
 }
 
 // en el caso de VRR, verifica si hay un proceso con MAYOR PRIORIDAD (aquellos que fueron desalojados por IO) y manda esos procesos a ejecutar
-void algoritmo_vrr(){
+int algoritmo_vrr(){
     log_debug(logger, "estas en VRR");
+    int proceso_a_ready = 0;
     t_pcb* primer_elemento;
     if(!mqueue_is_empty(monitor_READY_VRR)){
         primer_elemento = mqueue_pop(monitor_READY_VRR); 
         quantum_en_microsegundos = primer_elemento->quantum * 1000; // toma el quantum restante de su PCB
         log_debug(logger, "tomo quantum restante del proceso!! %u", primer_elemento->quantum);
-    } else {
+        proceso_a_ready = 1;
+    } else if(!mqueue_is_empty(monitor_READY)) {
         primer_elemento = mqueue_pop(monitor_READY);
         primer_elemento->quantum = config.quantum; // me aseguro que si está en READY COMUN siempre parta del quantum del sistema!! (por si desalojó desp de volver de instruccion IO por recurso no disponible, por ejemplo)
         quantum_en_microsegundos = config.quantum * 1000; // toma el quantum del sistema como RR
+        proceso_a_ready = 1;
     }
-    primer_elemento->estado = EXEC; 
-    mqueue_push(monitor_RUNNING, primer_elemento);
-    log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
+    if(proceso_a_ready){
+        primer_elemento->estado = EXEC; 
+        mqueue_push(monitor_RUNNING, primer_elemento);
+        log_cambio_estado_proceso(logger, primer_elemento->pid, "READY", "EXEC");
+        return proceso_a_ready;
+    } 
+    return proceso_a_ready;
 }
 
 void* control_quantum(void* args){
@@ -937,37 +951,40 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
 // ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // ------------- INICIO FCS. PLANI. LARGO PLAZO -------------
-void *planificar_new_to_ready(void *archivo_config)
-{
+void *planificar_new_to_ready(void *archivo_config){
     while (1){
         sem_wait(&orden_planificacion_largo_plazo); // solo cuando hayan procesos en NEW
         // 1. Tomo grado de multiprogramacion 
         sem_wait(&contador_grado_multiprogramacion);
         sem_wait(&mutex_planificacion_pausada[0]);
 
-        // 2. Envía orden a memoria para crear el proceso
-        t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
-        t_sbuffer* buffer_proceso_a_memoria = buffer_create(
-            sizeof(uint32_t) // pid 
-            + (uint32_t)strlen(primer_elemento->path) + sizeof(uint32_t) // longitud del string más longitud en sí
-        );
+        if(!mqueue_is_empty(monitor_NEW)){
+            // 2. Envía orden a memoria para crear el proceso
+            t_pcb* primer_elemento = mqueue_pop(monitor_NEW);
+            t_sbuffer* buffer_proceso_a_memoria = buffer_create(
+                sizeof(uint32_t) // pid 
+                + (uint32_t)strlen(primer_elemento->path) + sizeof(uint32_t) // longitud del string más longitud en sí
+            );
 
-        buffer_add_uint32(buffer_proceso_a_memoria, primer_elemento->pid);
-        buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
+            buffer_add_uint32(buffer_proceso_a_memoria, primer_elemento->pid);
+            buffer_add_string(buffer_proceso_a_memoria, (uint32_t)strlen(primer_elemento->path), primer_elemento->path);
 
-        cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
-        recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
+            cargar_paquete(conexion_memoria, INICIAR_PROCESO, buffer_proceso_a_memoria); 
+            recibir_operacion(conexion_memoria); // NO continúo hasta que memoria haya creado correctamente el proceso!
 
-        // 3. Envía a READY
-        primer_elemento->estado = READY;
-        mqueue_push(monitor_READY, primer_elemento);
+            // 3. Envía a READY
+            primer_elemento->estado = READY;
+            mqueue_push(monitor_READY, primer_elemento);
 
-        log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
-        log_ingreso_ready(logger, monitor_READY);
+            log_cambio_estado_proceso(logger,primer_elemento->pid, "NEW", "READY");
+            log_ingreso_ready(logger, monitor_READY);
+
+            // 4. Envia orden de procesamiento a corto plazo
+            sem_post(&orden_planificacion_corto_plazo); 
+        } else { // el proceso o alguno de los que estaba en new se pudo haber mandado a finalizar
+             sem_post(&contador_grado_multiprogramacion);
+        }
         sem_post(&mutex_planificacion_pausada[0]); // libera planificacion luego de mover entre colas
-
-        // 4. Envia orden de procesamiento a corto plazo
-        sem_post(&orden_planificacion_corto_plazo); 
     }
 }
 
@@ -990,7 +1007,7 @@ void *planificar_all_to_exit(void *args){
         switch (proceso_exit->estado){
             case NEW:
                 proceso_exit->estado = EXIT;
-                liberar_proceso_en_memoria(proceso_exit->pid);
+                // liberar_proceso_en_memoria(proceso_exit->pid); (el proceso no se carga a MEMORIA hasta que vaya a READY)
                 log_cambio_estado_proceso(logger, proceso_exit->pid, "NEW", "EXIT");
                 sem_post(&mutex_planificacion_pausada[3]);
                 break;

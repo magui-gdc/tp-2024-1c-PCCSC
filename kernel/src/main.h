@@ -6,7 +6,7 @@
 #include <utils/buffer.h>
 
 // --------- DECLARACION ESTRUCTURAS KERNEL --------- //
-typedef void (*fc_puntero)(); // PUNTERO A FUNCION
+typedef int (*fc_puntero)(); // PUNTERO A FUNCION int
 typedef enum {
     NEW, 
     READY, 
@@ -102,8 +102,8 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();
-void algoritmo_fifo_rr();
-void algoritmo_vrr();
+int algoritmo_fifo_rr();
+int algoritmo_vrr();
 void* control_quantum(void*);
 // ejecutar al ppio. para los casos donde se desaloja el proceso en actual ejecución, cualquiera sea el motivo!
 void control_quantum_desalojo();
