@@ -3,19 +3,22 @@
 #include <utils/hello.h>
 #include "main.h"
 
-config_struct config;
+extern t_config* config;
 
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
     logger = log_create("entradasalida.log", "Interfaz I/O", 1, LOG_LEVEL_DEBUG);
-
+    
     decir_hola("una Interfaz de Entrada/Salida");
-
+    
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
-    t_config* archivo_config = config_create(obtener_path());
+    archivo_config = config_create(obtener_path());
     char* nombre = obtener_path(); //TODO: esto en realidad lo nombra como el path, hay que buscar una forma que dado el path tengamos el nombre del file
     t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
+    if(interfaz_io->clase == FS){
+        fs_create();
+    }
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
 
@@ -102,7 +105,13 @@ int main(int argc, char* argv[]) {
             break;
         case FS:
             if(op == IO_FS_CREATE){
+                uint32_t length_file;
+                char* nombre_archivo = buffer_read_string(buffer_desalojo, &length_file);
                 
+                io_fs_create(/*uint32_t pid,*/ nombre_archivo);
+
+
+                responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_DELETE){
                 
@@ -386,28 +395,6 @@ void io_stdout_write(uint32_t direc, uint32_t size, int socket){
     printf("Output obtenido: %s", output);
     
     buffer_destroy(buffer_memoria);
-}
-
-    ///////////////////////// DIALFS   /////////////////////////
-
-void io_fs_create(char* arch, int socket){
-
-}
-
-void io_fs_delete(char* arch, int socket){
-
-}
-
-void io_fs_truncate(char* arch, uint32_t size, int socket){
-    
-}
-
-void io_fs_write(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
-
-}
-
-void io_fs_read(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
-
 }
 
 

@@ -9,6 +9,7 @@
 extern t_bitarray *bitmap_bloques;
 extern FILE* bloques_dat;
 extern FILE* bitmap_dat;
+extern char* path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
 
 /*          NACIMIENTO            */
 
@@ -17,6 +18,24 @@ void init_bitmap_bloques(); //usar bitarray de las commons
 void init_metadata(); //usar commons como en los config, es un .txt
 
 
-/*          MUERTE       s     */
+/*          MUERTE            */
 void close_bloques_dat();
 void destroy_bitmap_bloques();
+
+
+/*          FUNCIONES PRINCIPALES            */
+void f_create();
+void compactar_bloques();
+void crear_archivo(const char* nombre_archivo, t_bitarray* bitarray);   //t_bitarray ES DE LAS COMMONS!
+void eliminar_archivo(const char* nombre_archivo, t_bitarray* bitarray);
+void truncar_archivo(const char* nombre_archivo, int nuevo_tamano, t_bitarray* bitarray);
+void leer_archivo(const char* nombre_archivo, int offset, int size, char* buffer, t_bitarray* bitarray);
+void escribir_archivo(const char* nombre_archivo, int offset, int size, const char* buffer, t_bitarray* bitarray);
+void compactar_fs(t_bitarray* bitarray);
+bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
+bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);
+char* obtener_path();
+void escribir_bloquesdat();
+
+/*          AUXILIARES            */
+void actualizar_bitmap_dat(); // ACTUALIZAR ARCHIVO DE BITMAP SEGUN BITMAP EN MEMORIA
