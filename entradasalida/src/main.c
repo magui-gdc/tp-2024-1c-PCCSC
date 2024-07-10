@@ -13,8 +13,11 @@ int main(int argc, char* argv[]) {
     decir_hola("una Interfaz de Entrada/Salida");
 
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
-    t_config* archivo_config = config_create(obtener_path());
-    char* nombre = obtener_path(); //TODO: esto en realidad lo nombra como el path, hay que buscar una forma que dado el path tengamos el nombre del file
+    char* nombre = obtener_path(); 
+    char archivo_configuracion[64];
+    strcpy(archivo_configuracion, nombre);
+    strcat(archivo_configuracion, ".config");
+    t_config* archivo_config = config_create(archivo_configuracion);
     t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
@@ -25,7 +28,6 @@ int main(int argc, char* argv[]) {
     conexion_kernel = crear_conexion(config.ip_kernel, config.puerto_kernel);
    
     //----- IDENTIFICO LA IO CON EL KERNEL
-    // TODO: el kernel deber verificar que la IO no exista aun para no iniciarla dos veces y meterla en una lista de IOs de su tipo
     
     t_sbuffer* buffer_conexion = buffer_create(
         (uint32_t)strlen(interfaz_io->nombre_id) + sizeof(uint32_t) // tamanio del string
@@ -38,11 +40,9 @@ int main(int argc, char* argv[]) {
     log_info(logger, "Envie conexion a KERNEL");
     
     // establecer conexion con MEMORIA
-
     if(interfaz_io->clase != GEN){
         conexion_memoria = crear_conexion(config.ip_memoria, config.puerto_memoria);
-
-        log_info(logger, "Envie conexion a MEMORIA");
+        log_debug(logger, "Envie conexion a MEMORIA");
     }
 
 
@@ -70,6 +70,9 @@ int main(int argc, char* argv[]) {
         case GEN:
             if(op == IO_GEN_SLEEP){
                 // A. ACA RECIBE EL RESTO DEL CONTENIDO DEL BUFFER PORQUE SABE LO QUE DEBERÍA RECIBIR 
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                log_info(logger, "PID: %u - Operacion: IO_GEN_SLEEP", proceso);
+
                 // EN ESE CASO RECIBIRÍA UN NÚMERO PARA HACER LAS ITERACIONES
                 uint32_t iteraciones = buffer_read_uint32(buffer_operacion);
 
@@ -82,21 +85,15 @@ int main(int argc, char* argv[]) {
             break;
         case IN:
             if(op == IO_STDIN_READ){
-                uint32_t direc = buffer_read_uint32(buffer_operacion);
-                uint32_t size = buffer_read_uint32(buffer_operacion);
-
-                io_stdin_read(direc, size, conexion_memoria);
-
+                uint32_t bytes_a_leer_desde_consola = buffer_read_uint32(buffer_operacion);
+                io_stdin_read(buffer_operacion, bytes_a_leer_desde_consola, conexion_memoria);
                 responder_kernel(conexion_kernel);
             }
             break;
         case OUT:
             if(op == IO_STDOUT_WRITE){
-                uint32_t direc = buffer_read_uint32(buffer_operacion);
-                uint32_t size = buffer_read_uint32(buffer_operacion);
-
-                io_stdout_write(direc, size, conexion_memoria);
-
+                uint32_t bytes_a_leer_desde_memoria = buffer_read_uint32(buffer_operacion);
+                io_stdout_write(buffer_operacion, bytes_a_leer_desde_memoria, conexion_memoria);
                 responder_kernel(conexion_kernel);
             }
             break;
@@ -153,7 +150,7 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-responder_kernel(int socket){
+void responder_kernel(int socket){
     op_code respuesta_kernel = IO_LIBERAR; // si todo fue ok SIEMPRE enviar IO_LIBERAR
     ssize_t bytes_enviados = send(socket, &respuesta_kernel, sizeof(respuesta_kernel), 0);
     if (bytes_enviados == -1) {
@@ -161,34 +158,6 @@ responder_kernel(int socket){
         exit(EXIT_FAILURE);
     }
 }
-
-//////////////////////////////////////////// PRUEBA DE ENVIO DE PAQUETES ///////////////////////////(XD)//////////////////////////
-/*
-void paquete(int conexion) {
-	char* leido = malloc(sizeof(char));
-	t_paquete* paquete;
-    int tamanio;
-
-	paquete = crear_paquete();
-
-	while (1){
-		leido = readline("> ");
-
-		if(strlen(leido)==0){
-			free(leido);
-			break;
-		}
-
-		tamanio = strlen(leido) + 1;
-		agregar_a_paquete(paquete, leido, tamanio);
-		// libero lineas
-		free(leido);
-	}
-
-	enviar_paquete(paquete, conexion);
-	eliminar_paquete(paquete);
-}
-*/
 
 ////////////// CONFIGURACIÓN DEL CONFIG Y DERIVADOS ////////////////////////
 
@@ -225,11 +194,10 @@ IO_class selector_carga_config (t_config* archivo_config){
 }
 
 char* obtener_path(){
-    char* path = malloc(sizeof(char) * 100);
-    printf("introduzca el path de la IO");
-    scanf("%s", path);
-    if(strlen(path) == 0){
-        //TODO: retornar error por falta de nombre;
+    char* path = malloc(64);
+    while (strlen(path) == 0) {
+        printf("Introducir el nombre de la IO");
+        scanf("%s", path);
     }
     return path;
 }
@@ -293,24 +261,54 @@ void io_gen_sleep(uint32_t iteraciones){
 
     ///////////////////////// STDIN    /////////////////////////
 
-void io_stdin_read(uint32_t direc, uint32_t size, int socket){
+void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
+    uint32_t proceso = buffer_read_uint32(direcciones_memoria);
+    log_info(logger, "PID: %u - Operacion: IO_STDIN_READ", proceso);
+    log_debug(logger, "bytes a leer desde consola %u", size);
 
     // CARGO VALOR
+    uint32_t bytes_lectura = size + 1; // un espacio para el /0
+    char* input = malloc(bytes_lectura);
+    printf("Ingresar texto para guardar en memoria:\n");
+    // scanf("%s", input); // CON SCANF no limitas string!!
+    if (fgets(input, bytes_lectura, stdin) != NULL) {
+        input[strcspn(input, "\n")] = '\0';
+        printf("se ingreso: %s\n", input);
 
-    uint32_t asig_esp = sizeof(char) * size;
-    char* input = malloc(asig_esp);
-    scanf("%s", input); //TODO: verificar el overflow error
-    
-    // VERIFICO OVFLOW
+        int cantidad_peticiones_memoria = buffer_read_int(direcciones_memoria);
+        uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
+            sizeof(int) + // cantidad de peticiones
+            sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
+            sizeof(uint32_t) * cantidad_peticiones_memoria + size; // bytes de escritura por petición void*
 
-    if(strlen(input) > size){
-        log_error(logger, "El input produjo un overflow");
-        exit(EXIT_FAILURE);
+        t_sbuffer* buffer_memoria = buffer_create(tamanio_buffer_memoria);
+        buffer_add_uint32(buffer_memoria, proceso);
+        buffer_add_int(buffer_memoria, cantidad_peticiones_memoria);
+
+        void* datos_a_enviar = NULL;
+        void* dato_enviar = input;
+        uint32_t bytes_enviados = 0;
+        for (size_t i = 0; i < cantidad_peticiones_memoria; i++){
+            buffer_add_uint32(buffer_memoria, buffer_read_uint32(direcciones_memoria)); // agrega direccion fisica
+            uint32_t tamanio_peticion = buffer_read_uint32(direcciones_memoria);
+            datos_a_enviar = malloc(tamanio_peticion);
+            memcpy(datos_a_enviar, dato_enviar + bytes_enviados, tamanio_peticion);
+            buffer_add_void(buffer_memoria, datos_a_enviar, tamanio_peticion); // agrega void* con su respectivo tamanio
+
+            free(datos_a_enviar); // para la próxima petición
+            bytes_enviados+=tamanio_peticion;
+        }
+
+        cargar_paquete(socket, PETICION_ESCRITURA, buffer_memoria);
+        recibir_operacion(socket);
+    } else {
+        printf("Error al leer la entrada.\n");
     }
+
 
     // CREO Y MANDO EL BUFFER
 
-    t_sbuffer* buffer_memoria = buffer_create(
+    /*t_sbuffer* buffer_memoria = buffer_create(
         sizeof(int) // respuesta de mnemoria
         + (uint32_t)strlen(input) + sizeof(uint32_t) // string a ingresar
         + sizeof(uint32_t) // direccion de memoria
@@ -321,11 +319,11 @@ void io_stdin_read(uint32_t direc, uint32_t size, int socket){
     buffer_add_uint32(buffer_memoria, direc);
     //TODO: aca no va IO_STDIN_READ, sino la instruccion que corresponda al cargado de datos en memoria (que puede ser esta misma si quieren)
     cargar_paquete(socket, IO_STDIN_READ, buffer_memoria);
-
+    */
     // ESPERO RESPUESTA DE MEMORIA
 
     //TODO: verificar el "ok" de memoria
-
+    /*
     int ok = 0;
     while (ok == 0){ // este while tal vez esta de mas
         int op_code = recibir_operacion(socket);
@@ -337,18 +335,52 @@ void io_stdin_read(uint32_t direc, uint32_t size, int socket){
             }
         }
     }
-    
-    buffer_destroy(buffer_memoria);
+    */
+    //buffer_destroy(buffer_memoria); ESTO YA LO HACE CARGAR_PAQUETE
 
 }
 
     //////////////////////// STDOUT    /////////////////////////
 
-void io_stdout_write(uint32_t direc, uint32_t size, int socket){
-    
+void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
+    uint32_t proceso = buffer_read_uint32(direcciones_memoria);
+    log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
+    log_debug(logger, "bytes a leer desde consola %u", size);
 
-    // CREO Y MANDO EL BUFFER
+    direcciones_memoria->offset-=sizeof(uint32_t); // retrocedo offset para que envíe el PID del proceso a memoria
+    uint32_t nuevo_tamanio = direcciones_memoria->size - sizeof(uint32_t); // le resto tamanio del size que no se debe enviar a memoria
+    t_sbuffer* buffer_memoria = buffer_create(nuevo_tamanio);
+    buffer_read(direcciones_memoria, buffer_memoria->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
 
+    cargar_paquete(socket, PETICION_LECTURA, buffer_memoria);
+    int recibir_operacion_memoria = recibir_operacion(socket);
+    if(recibir_operacion_memoria == PETICION_LECTURA){
+        t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(socket);
+        int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+
+        void* peticion_completa = malloc(size);
+        uint32_t bytes_recibidos = 0;
+        for (size_t i = 0; i < cantidad_peticiones; i++){
+            uint32_t bytes_peticion;
+            void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+            memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+            bytes_recibidos += bytes_peticion;
+            free(dato_peticion);
+        }
+
+        char* valor_leido = malloc(size + 1); // +1 para el carácter nulo al final
+        memcpy(valor_leido, peticion_completa, size);
+        valor_leido[size] = '\0';
+
+        printf("Dato leido desde memoria %s.\n", valor_leido);
+
+        free(valor_leido);
+        free(peticion_completa);
+        buffer_destroy(buffer_rta_peticion_lectura);
+
+    }
+
+    /*
     uint32_t asig_esp = sizeof(char) * size;
     char* output = malloc(asig_esp);
 
@@ -385,7 +417,7 @@ void io_stdout_write(uint32_t direc, uint32_t size, int socket){
 
     printf("Output obtenido: %s", output);
     
-    buffer_destroy(buffer_memoria);
+    buffer_destroy(buffer_memoria); */
 }
 
     ///////////////////////// DIALFS   /////////////////////////
