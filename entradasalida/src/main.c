@@ -5,6 +5,8 @@
 
 extern t_config* config;
 
+//TODO:::::: CHECKEAR QUE LOS MALLOCS SE LIBEREN!!!!!!!!!!
+
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
