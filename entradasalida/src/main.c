@@ -8,12 +8,15 @@ config_struct config;
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
-    logger = log_create("entradasalida.log", "Interfaz I/O", 1, LOG_LEVEL_DEBUG);
+    char* nombre = obtener_path(); 
+    char archivo_log[64];
+    strcpy(archivo_log, nombre);
+    strcat(archivo_log, ".log");
+    logger = log_create(archivo_log, "Interfaz I/O", 0, LOG_LEVEL_DEBUG);
 
     decir_hola("una Interfaz de Entrada/Salida");
 
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
-    char* nombre = obtener_path(); 
     char archivo_configuracion[64];
     strcpy(archivo_configuracion, nombre);
     strcat(archivo_configuracion, ".config");
@@ -75,6 +78,7 @@ int main(int argc, char* argv[]) {
 
                 // EN ESE CASO RECIBIRÍA UN NÚMERO PARA HACER LAS ITERACIONES
                 uint32_t iteraciones = buffer_read_uint32(buffer_operacion);
+                log_debug(logger, "se manda a dormir %u iteraciones", iteraciones);
 
                 // B. Ejecutar instrucción!
                 io_gen_sleep(iteraciones);
@@ -86,6 +90,7 @@ int main(int argc, char* argv[]) {
         case IN:
             if(op == IO_STDIN_READ){
                 uint32_t bytes_a_leer_desde_consola = buffer_read_uint32(buffer_operacion);
+                buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
                 io_stdin_read(buffer_operacion, bytes_a_leer_desde_consola, conexion_memoria);
                 responder_kernel(conexion_kernel);
             }
@@ -93,26 +98,121 @@ int main(int argc, char* argv[]) {
         case OUT:
             if(op == IO_STDOUT_WRITE){
                 uint32_t bytes_a_leer_desde_memoria = buffer_read_uint32(buffer_operacion);
+                buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
                 io_stdout_write(buffer_operacion, bytes_a_leer_desde_memoria, conexion_memoria);
                 responder_kernel(conexion_kernel);
             }
             break;
         case FS:
             if(op == IO_FS_CREATE){
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                uint32_t length_file;
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
                 
             }
             if(op == IO_FS_DELETE){
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                uint32_t length_file;
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
                 
             }
             if(op == IO_FS_TRUNCATE){
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                uint32_t length_file;
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+                uint32_t tamanio_truncate = buffer_read_uint32(buffer_operacion);
                 
             }
             if(op == IO_FS_WRITE){
                 // todo: se le habla a memoria
+                uint32_t length_file;
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+                uint32_t bytes_a_leer_desde_memoria = buffer_read_uint32(buffer_operacion);
+                uint32_t offset_puntero_archivo = buffer_read_uint32(buffer_operacion);
+                buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
+                
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
+
+                log_debug(logger, "bytes a leer desde memoria %u", bytes_a_leer_desde_memoria);
+
+                buffer_operacion->offset-=sizeof(uint32_t); // retrocedo offset para que envíe el PID del proceso a memoria
+                uint32_t nuevo_tamanio = buffer_operacion->size - sizeof(uint32_t)*2; // le resto tamanio del size y del buffer mmu anterior que no se debe enviar a memoria
+                t_sbuffer* buffer_memoria = buffer_create(nuevo_tamanio);
+                buffer_read(buffer_operacion, buffer_memoria->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
+
+                cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_memoria);
+                int recibir_operacion_memoria = recibir_operacion(conexion_memoria);
+                if(recibir_operacion_memoria == PETICION_LECTURA){
+                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
+                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+
+                    void* peticion_completa = malloc(bytes_a_leer_desde_memoria);
+                    uint32_t bytes_recibidos = 0;
+                    for (size_t i = 0; i < cantidad_peticiones; i++){
+                        uint32_t bytes_peticion;
+                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+                        bytes_recibidos += bytes_peticion;
+                        free(dato_peticion);
+                    }
+
+                    char* valor_leido = malloc(bytes_a_leer_desde_memoria + 1); // +1 para el carácter nulo al final
+                    memcpy(valor_leido, peticion_completa, bytes_a_leer_desde_memoria);
+                    valor_leido[bytes_a_leer_desde_memoria] = '\0'; // YA TENES CARGADO EL VALOR LEIDO DESDE MEMORIA 
+
+                    //TODO: ESCRIBIR EN ARCHIVO! 
+
+                    free(valor_leido);
+                    free(peticion_completa);
+                    buffer_destroy(buffer_rta_peticion_lectura);
+                }
                 
             }
             if(op == IO_FS_READ){
+                uint32_t length_file;
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+                uint32_t bytes_a_leer_desde_archivo = buffer_read_uint32(buffer_operacion);
+                uint32_t offset_puntero_archivo = buffer_read_uint32(buffer_operacion);
+                buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
                 
+                uint32_t proceso = buffer_read_uint32(buffer_operacion);
+                log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
+
+                log_debug(logger, "bytes a leer desde archivo %u", bytes_a_leer_desde_archivo);
+
+                char* dato_a_leer_desde_archivo = malloc(bytes_a_leer_desde_archivo + 1); // dato + /0
+
+                // TODO: CARGAR DATO DESDE ARCHIVO EN dato_a_leer_desde_archivo
+
+                int cantidad_peticiones_memoria = buffer_read_int(buffer_operacion);
+                uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
+                    sizeof(int) + // cantidad de peticiones
+                    sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
+                    sizeof(uint32_t) * cantidad_peticiones_memoria + bytes_a_leer_desde_archivo; // bytes de escritura por petición void*
+
+                t_sbuffer* buffer_memoria = buffer_create(tamanio_buffer_memoria);
+                buffer_add_uint32(buffer_memoria, proceso);
+                buffer_add_int(buffer_memoria, cantidad_peticiones_memoria);
+
+                void* dato_enviar = dato_a_leer_desde_archivo;
+                uint32_t bytes_enviados = 0;
+                log_debug(logger, "cantidad peticiones IO %d", cantidad_peticiones_memoria);
+                for (size_t i = 0; i < cantidad_peticiones_memoria; i++){
+                    uint32_t dir_fisica = buffer_read_uint32(buffer_operacion);
+                    buffer_add_uint32(buffer_memoria, dir_fisica); // agrega direccion fisica
+                    uint32_t tamanio_peticion = buffer_read_uint32(buffer_operacion);
+                    log_debug(logger, "dir. fisica %u, tamanio peticion %u", dir_fisica, tamanio_peticion);
+                    void* datos_a_enviar = malloc(tamanio_peticion);
+                    memcpy(datos_a_enviar, dato_enviar + bytes_enviados, tamanio_peticion);
+                    buffer_add_void(buffer_memoria, datos_a_enviar, tamanio_peticion); // agrega void* con su respectivo tamanio
+
+                    free(datos_a_enviar); // para la próxima petición
+                    bytes_enviados+=tamanio_peticion;
+                }
+
+                cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
+                recibir_operacion(conexion_memoria);
             }
             break;
         default:
@@ -196,7 +296,7 @@ IO_class selector_carga_config (t_config* archivo_config){
 char* obtener_path(){
     char* path = malloc(64);
     while (strlen(path) == 0) {
-        printf("Introducir el nombre de la IO");
+        printf("Introducir el nombre de la IO: ");
         scanf("%s", path);
     }
     return path;
@@ -269,8 +369,11 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     // CARGO VALOR
     uint32_t bytes_lectura = size + 1; // un espacio para el /0
     char* input = malloc(bytes_lectura);
+
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF);
     printf("Ingresar texto para guardar en memoria:\n");
-    // scanf("%s", input); // CON SCANF no limitas string!!
+
     if (fgets(input, bytes_lectura, stdin) != NULL) {
         input[strcspn(input, "\n")] = '\0';
         printf("se ingreso: %s\n", input);
@@ -285,13 +388,15 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
         buffer_add_uint32(buffer_memoria, proceso);
         buffer_add_int(buffer_memoria, cantidad_peticiones_memoria);
 
-        void* datos_a_enviar = NULL;
         void* dato_enviar = input;
         uint32_t bytes_enviados = 0;
+        log_debug(logger, "cantidad peticiones IO %d", cantidad_peticiones_memoria);
         for (size_t i = 0; i < cantidad_peticiones_memoria; i++){
-            buffer_add_uint32(buffer_memoria, buffer_read_uint32(direcciones_memoria)); // agrega direccion fisica
+            uint32_t dir_fisica = buffer_read_uint32(direcciones_memoria);
+            buffer_add_uint32(buffer_memoria, dir_fisica); // agrega direccion fisica
             uint32_t tamanio_peticion = buffer_read_uint32(direcciones_memoria);
-            datos_a_enviar = malloc(tamanio_peticion);
+            log_debug(logger, "dir. fisica %u, tamanio peticion %u", dir_fisica, tamanio_peticion);
+            void* datos_a_enviar = malloc(tamanio_peticion);
             memcpy(datos_a_enviar, dato_enviar + bytes_enviados, tamanio_peticion);
             buffer_add_void(buffer_memoria, datos_a_enviar, tamanio_peticion); // agrega void* con su respectivo tamanio
 
@@ -304,40 +409,6 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     } else {
         printf("Error al leer la entrada.\n");
     }
-
-
-    // CREO Y MANDO EL BUFFER
-
-    /*t_sbuffer* buffer_memoria = buffer_create(
-        sizeof(int) // respuesta de mnemoria
-        + (uint32_t)strlen(input) + sizeof(uint32_t) // string a ingresar
-        + sizeof(uint32_t) // direccion de memoria
-    );
-    
-    buffer_add_int(buffer_memoria, 0);
-    buffer_add_string(buffer_memoria, (uint32_t)strlen(input), input);
-    buffer_add_uint32(buffer_memoria, direc);
-    //TODO: aca no va IO_STDIN_READ, sino la instruccion que corresponda al cargado de datos en memoria (que puede ser esta misma si quieren)
-    cargar_paquete(socket, IO_STDIN_READ, buffer_memoria);
-    */
-    // ESPERO RESPUESTA DE MEMORIA
-
-    //TODO: verificar el "ok" de memoria
-    /*
-    int ok = 0;
-    while (ok == 0){ // este while tal vez esta de mas
-        int op_code = recibir_operacion(socket);
-        if(op_code == IO_MEMORY_DONE){//TODO: esto no es un semaforo? podriamos hacer un semaforo que se comunique entre memoria-IO?
-            ok = buffer_read_int(buffer_memoria); //?
-            if(ok == -1){ //?
-                log_error(logger, "Error al cargar valor en memoria");
-                exit(EXIT_FAILURE);
-            }
-        }
-    }
-    */
-    //buffer_destroy(buffer_memoria); ESTO YA LO HACE CARGAR_PAQUETE
-
 }
 
     //////////////////////// STDOUT    /////////////////////////
@@ -348,7 +419,7 @@ void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     log_debug(logger, "bytes a leer desde consola %u", size);
 
     direcciones_memoria->offset-=sizeof(uint32_t); // retrocedo offset para que envíe el PID del proceso a memoria
-    uint32_t nuevo_tamanio = direcciones_memoria->size - sizeof(uint32_t); // le resto tamanio del size que no se debe enviar a memoria
+    uint32_t nuevo_tamanio = direcciones_memoria->size - sizeof(uint32_t)*2; // le resto tamanio del size y del buffer mmu anterior que no se debe enviar a memoria
     t_sbuffer* buffer_memoria = buffer_create(nuevo_tamanio);
     buffer_read(direcciones_memoria, buffer_memoria->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
 

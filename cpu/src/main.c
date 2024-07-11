@@ -412,10 +412,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio, 0);
             
             t_sbuffer *buffer_interfaz_stdin_stdout = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) // nombre interfaz
+                strlen(nombre_interfaz) + sizeof(uint32_t) // nombre interfaz
                 + buffer_mmu->size + sizeof(uint32_t) // tamanio del buffer con direcciones fisicas y bytes por peticion + uint32_t para guardar el tamanio
                 + sizeof(uint32_t) // VALOR REGISTRO TAMANIO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
@@ -437,7 +437,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer *buffer_interfaz_fs_create_delete = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
@@ -459,7 +459,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) // REGISTRO PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
@@ -483,10 +483,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             t_sbuffer* buffer_mmu = mmu("LEER", reg_d, reg_t, 0);
 
             t_sbuffer *buffer_interfaz_fs_write_read = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) // Nombre interfaz
-                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                strlen(nombre_interfaz) + sizeof(uint32_t) // Nombre interfaz
+                + strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) * 2 // REGISTRO PARA IO (TAMANIO + PUNTERO)
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
                 + buffer_mmu->size + sizeof(uint32_t)  // tamanio del buffer con direcciones fisicas y bytes por peticion + uint32_t para guardar el tamanio
             );
