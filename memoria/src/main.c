@@ -5,33 +5,29 @@
 #include "main.h"
 
 pthread_t thread_memoria;
+// declarar sem
 
 int main(int argc, char *argv[]){
 
     // ------ INICIALIZACIÓN VARIABLES GLOBALES ------ //
-    t_config *archivo_config = iniciar_config("memoria.config");
+    t_config *archivo_config = iniciar_config("memoriaIO.config");
     cargar_config_struct_MEMORIA(archivo_config);
     logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
     decir_hola("Memoria");
-    
+    // TODO: init semaforo
     init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
 
     // ------ INICIALIZACIÓN SERVIDOR + HILO ESCUCHA ------ //
     int socket_servidor = iniciar_servidor(config.puerto_escucha);
-    log_info(logger, config.puerto_escucha);
+    log_info(logger, "puerto %s", config.puerto_escucha);
     log_info(logger, "Server MEMORIA iniciado");
 
-    if (pthread_create(&thread_memoria, NULL, servidor_escucha, &socket_servidor) != 0){
-        log_error(logger, "No se ha podido crear el hilo SERVIDOR de MEMORIA");
-        exit(EXIT_FAILURE);
-    }
-
-    pthread_join(thread_memoria, NULL);
-
+    servidor_escucha(&socket_servidor);
 
     log_destroy(logger);
     config_destroy(archivo_config);
     bitarray_destroy(bitmap_marcos);
+    // TODO: FREE SEMAFORO
 
     return EXIT_SUCCESS;
 }
@@ -75,6 +71,7 @@ void *atender_cliente(void *cliente){
             tiempo_espera_retardo(timer); // ANTES DE RESPONDER ESPERO QUE FINALICE EL RETARDO
             send(cliente_recibido, &respuesta_kernel, sizeof(respuesta_kernel), 0);
 
+            free(path);
             buffer_destroy(buffer_path);
         break;
         case ELIMINAR_PROCESO: // KERNEL
@@ -127,8 +124,11 @@ void *atender_cliente(void *cliente){
                         log_debug(logger, "INSTRUCCION LEIDA EN LINEA %d: %s", pc_proceso, instruccion);
                         lee_instruccion = 1;
                         break;
+                    } else {
+                        free(instruccion);
+                        instruccion = NULL;
+                        lineaActual++;
                     }
-                    lineaActual++;
                 }
                 fclose(script);
                 
@@ -142,8 +142,8 @@ void *atender_cliente(void *cliente){
                     tiempo_espera_retardo(timer); // SIEMPRE, antes de terminar la petición a memoria, espera a que se complete el retardo de la configuración
                     cargar_paquete(cliente_recibido, INSTRUCCION, buffer_instruccion);
                     buffer_destroy(buffer_lectura_instrucciones);
+                    free(instruccion);
                 } // else TODO: llega al final y CPU todavía no desalojó el proceso por EXIT (esto pasaría sólo si el proceso no termina con EXIT)
-                free(instruccion);
             }
             free(path_instrucciones_proceso);
         break;
@@ -185,6 +185,7 @@ void *atender_cliente(void *cliente){
                 log_info(logger, "PID: %u - Accion: ESCRIBIR - Direccion fisica: %u - Tamaño %u", proceso_peticion_escritura, direccion_fisica, bytes_peticion);
                 escribir_memoria(direccion_fisica, dato_escritura, bytes_peticion);
 
+                free(dato_escritura); // va liberando memoria ya escrita!
                 tiempo_espera_retardo(timer);
             }
 
@@ -214,7 +215,7 @@ void *atender_cliente(void *cliente){
                 log_info(logger, "PID: %u - Accion: LEER - Direccion fisica: %u - Tamaño %u", proceso_peticion_lectura, direccion_fisica, bytes_peticion);
                 void* dato_leido = leer_memoria(direccion_fisica, bytes_peticion);
                 buffer_add_void(buffer_datos_lectura, dato_leido, bytes_peticion);
-                free(dato_leido);
+                free(dato_leido); // va liberando memoria ya cargada en buffer!
 
                 tiempo_espera_retardo(timer);
             }
@@ -255,7 +256,7 @@ void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new
     
     // 2. Analizar si corresponde ampliar o reducir el proceso
     int cantidad_paginas_ocupadas = cant_paginas_ocupadas_proceso(pid); // paginas ocupadas por el proceso
-    int cantidad_paginas_solicitadas = (int)ceil((double)(new_size / config.tam_pagina)); // paginas que se necesitan con el nuevo valor del resize
+    int cantidad_paginas_solicitadas = (int)ceil((double)new_size / config.tam_pagina); // paginas que se necesitan con el nuevo valor del resize
     
     if (cantidad_paginas_solicitadas > cantidad_paginas_ocupadas){
         int paginas_a_aumentar = cantidad_paginas_solicitadas - cantidad_paginas_ocupadas;
@@ -277,7 +278,7 @@ void resize_proceso(t_temporal* timer, int socket_cliente, uint32_t pid, int new
         int paginas_a_reducir = cantidad_paginas_ocupadas - cantidad_paginas_solicitadas;
         log_info(logger, "PID: %u - Tamaño Actual: %d - Tamaño a Reducir: %d", pid, cantidad_paginas_ocupadas*config.tam_pagina, cantidad_paginas_solicitadas*config.tam_pagina);
         reducir_proceso(pid, paginas_a_reducir);
-    } // si cantidad_paginas_solicitadas == cantidad_paginas_ocupadas NO se hace nada :)
+    } // si cantidad_paginas_solicitadas == cantidad_paginas_ocupadas NO se hace nada
     op_code respuesta_cpu = CONTINUAR;
     tiempo_espera_retardo(timer);
     send(socket_cliente, &respuesta_cpu, sizeof(respuesta_cpu), 0);
@@ -291,6 +292,7 @@ void ampliar_proceso(uint32_t pid, int cantidad, uint32_t* marcos_solicitados){
         create_pagina(proceso->tabla_paginas, marcos_solicitados[i]); 
         log_debug(logger, "cree una nueva pagina en la posicion %d de la tabla de pags. del proceso %u y le asigne el marco numero %u", list_size(proceso->tabla_paginas) - 1, proceso->pid, marcos_solicitados[i]);
     }
+    free(marcos_solicitados);
 }
 
 void reducir_proceso(uint32_t pid, int cantidad){
@@ -339,9 +341,11 @@ int escribir_memoria(uint32_t dir_fisica, void* dato, uint32_t tam_escritura){
     void* dato_escrito = leer_memoria(dir_fisica, tam_escritura);
     if(!dato_escrito){
         log_debug(logger, "parece que no se escribio bien");
+        free(dato_escrito);
         return DESALOJAR;
     } else {
         log_debug(logger, "lo que acabamos de escribir ¿? %s .", (char*)dato_escrito);
+        free(dato_escrito);
         return CONTINUAR;
     }
 }

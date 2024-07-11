@@ -6,7 +6,7 @@
 #include <utils/buffer.h>
 
 // --------- DECLARACION ESTRUCTURAS KERNEL --------- //
-typedef void (*fc_puntero)(); // PUNTERO A FUNCION
+typedef int (*fc_puntero)(); // PUNTERO A FUNCION int
 typedef enum {
     NEW, 
     READY, 
@@ -28,6 +28,7 @@ typedef struct {
     char* tipo_interfaz;
     int socket_interfaz;
     int disponibilidad; // 0: si esta libre; 1: si está siendo usado por otro proceso
+    uint32_t pid_ejecutando;
     t_mqueue* cola_bloqueados;
 } t_interfaz;
 
@@ -41,6 +42,7 @@ typedef struct{
     char* algoritmo_planificacion;
     char** recursos;
     int quantum;
+    char* path_scripts;
 } config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
 
 typedef struct {
@@ -53,7 +55,7 @@ typedef struct {
     uint32_t pid;
     e_estado_proceso estado;
     t_registros_cpu registros;
-    uint8_t quantum;
+    uint32_t quantum;
     cod_desalojo desalojo; 
     char path[256];
     int* recursos; // array que guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando
@@ -100,8 +102,8 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
 
 // --------- FUNCIONES ALGORITMOS DE PLANIFICACION --------- //
 fc_puntero obtener_algoritmo_planificacion();
-void algoritmo_fifo_rr();
-void algoritmo_vrr();
+int algoritmo_fifo_rr();
+int algoritmo_vrr();
 void* control_quantum(void*);
 // ejecutar al ppio. para los casos donde se desaloja el proceso en actual ejecución, cualquiera sea el motivo!
 void control_quantum_desalojo();

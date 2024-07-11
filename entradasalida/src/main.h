@@ -40,8 +40,7 @@ typedef enum {
 } IO_class;
 
 //nos llega el char de la interfaz (mouse, teclado, impresora), y el config que SUPONEMOS que viene del kernel segun la interfaz
-typedef struct
-{
+typedef struct{
     char* nombre_id;
     t_config* archivo;
     IO_class clase;
@@ -88,8 +87,8 @@ char* obtener_path();
 
 // INSTRUCCIONES DE IO
 void io_gen_sleep(uint32_t work_u);
-void io_stdin_read(uint32_t reg_d, uint32_t reg_s, int socket_m);
-void io_stdout_write(uint32_t reg_d, uint32_t reg_s, int socket_m);
+void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
+void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
 void io_fs_create(char* arch, int socket_m);
 void io_fs_delete(char* arch, int socket_m);
 void io_fs_truncate(char* arch, uint32_t reg_s, int socket_m);

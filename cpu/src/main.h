@@ -9,7 +9,7 @@ typedef struct{
     char* puerto_memoria;
     char* puerto_escucha_dispatch; 
     char* puerto_escucha_interrupt; 
-    char* cantidad_entradas_tlb;
+    int cantidad_entradas_tlb;
     char* algoritmo_tlb;
 } config_struct;
 
@@ -23,8 +23,7 @@ typedef struct {
     uint32_t pid;
     int pagina;
     uint32_t marco;
-    // struct timespec timestamp; // Timestamp para registrar el tiempo de acceso con precisión en nanosegundos PARA LRU
-    uint8_t fifo; // si la lista está vacía se le asigna 1 a este valor (primer valor ingresado); cuando se saque dicho elemento (se llenó la TLB y se debe elegir qué elemento sacar) se pasa el valor 1 al siguiente elemento de la lista => FIFO
+    uint64_t timestamp; // Timestamp para registrar el tiempo de acceso con precisión en nanosegundos PARA LRU
 } t_tlb;
 
 extern config_struct config;
@@ -57,3 +56,7 @@ uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina);
 t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina);
 // agrega el marco según el algoritmo para la TLB
 t_tlb* agregar_marco_tlb(uint32_t proceso, int pagina, uint32_t marco); 
+
+// LRU / FIFO
+uint64_t obtener_timestamp(); // devuelve microsegundos actuales
+void remover_entrada_segun_algoritmo();

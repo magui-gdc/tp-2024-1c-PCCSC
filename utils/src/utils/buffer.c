@@ -92,6 +92,22 @@ void *buffer_read_void(t_sbuffer *buffer, uint32_t *size) {
     return data;
 }
 
+// agregar un buffer dentro de otro buffer y libera el buffer agregado
+void buffer_add_buffer(t_sbuffer *dest, t_sbuffer *src) {
+    buffer_add_uint32(dest, src->size);
+    buffer_add(dest, src->stream, src->size);
+    buffer_destroy(src);
+}
+
+// leer un buffer dentro de otro buffer
+t_sbuffer* buffer_read_buffer(t_sbuffer *buffer) {
+    uint32_t size;
+    size = buffer_read_uint32(buffer);
+    t_sbuffer *new_buffer = buffer_create(size);
+    buffer_read(buffer, new_buffer->stream, size);
+    return new_buffer;
+}
+
 // Agrega registros CPU al buffer
 void buffer_add_registros(t_sbuffer *buffer, t_registros_cpu *registros) {
     buffer_add(buffer, &(registros->PC), sizeof(uint32_t));
@@ -150,7 +166,6 @@ void cargar_paquete(int socket, op_code codigo_operacion, t_sbuffer *buffer){
     buffer_destroy(buffer);
     free(paquete);
 }
-
 
 t_sbuffer* cargar_buffer(int socket) {
     t_sbuffer *buffer = malloc(sizeof(t_sbuffer));

@@ -166,13 +166,13 @@ int get_bitman_index(void* direccion_marco){
 /*          AUXILIARES PARA RESIZE           */
 
 uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
-    size_t max_bit = bitarray_get_max_bit(bitmap_marcos);
+    size_t max_bit = cantidad_marcos_totales; // bitarray_get_max_bit(bitmap_marcos);
     size_t marcos_libres_encontrados = 0;
     uint32_t *marcos_libres = malloc(cantidad_marcos_libres * sizeof(uint32_t));
 
     for (size_t i = 0; i < max_bit && marcos_libres_encontrados < cantidad_marcos_libres; i++) {
         if (!bitarray_test_bit(bitmap_marcos, i)) {
-            marcos_libres[marcos_libres_encontrados] = i; // [7, 18, 30]
+            marcos_libres[marcos_libres_encontrados] = i;
             marcos_libres_encontrados++;
         }
     }
