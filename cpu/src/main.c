@@ -358,6 +358,47 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 break;
                 */
             }
+        } else if (strcmp(comando, "COPY_STRING") == 0){
+            char* tamanio_a_leer = tokens[1];
+            uint32_t direccion_logica = obtener_valor_registro("SI");
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio_a_leer, 0);
+            
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
+            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            switch (recibir_operacion_memoria){
+                case PETICION_LECTURA: 
+                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
+                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+                    
+                    void* peticion_completa = malloc(tamanio_a_leer);
+                    uint32_t bytes_recibidos = 0;
+                    for (size_t i = 0; i < cantidad_peticiones; i++){
+                        uint32_t bytes_peticion;
+                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+                        bytes_recibidos += bytes_peticion;
+                        free(dato_peticion);
+                    }
+
+                    // se asigna el valor al registro que corresponda
+                    char valor_leido_str[16];
+                    if (tamanio_a_leer == 1) {
+                        uint8_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, tamanio_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
+                    } else {
+                        uint32_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, tamanio_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
+                    }
+
+                    set("DI", valor_leido_str);
+                    free(peticion_completa);
+                    buffer_destroy(buffer_rta_peticion_lectura);
+                break;
+            }
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;

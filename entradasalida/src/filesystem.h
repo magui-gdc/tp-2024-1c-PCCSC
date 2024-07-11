@@ -38,6 +38,13 @@ char* obtener_path();
 void escribir_bloquesdat();
 void cargar_bloque(FILE* archivo_metadata, char* contenido);
 
+/*      FUNCIONES IO FS     */ 
+void io_fs_create(uint32_t pid, char* arch, int socket_m);
+void io_fs_delete(uint32_t pid, char* arch, int socket_m);
+void io_fs_truncate(uint32_t pid, char* arch, uint32_t reg_s, int socket_m);
+void io_fs_write(uint32_t pid, char* arch, uint32_t bytes, uint32_t reg_p, int socket_m);
+void io_fs_read(uint32_t pid, char* arch, uint32_t bytes, uint32_t reg_p, int socket_m); 
+
 
 /*      COMPACTACION     */ 
 

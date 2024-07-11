@@ -73,6 +73,7 @@ int main(int argc, char* argv[]) {
         t_sbuffer* buffer_operacion = cargar_buffer(conexion_kernel); 
 
         // 3. Se procesa la operación
+        
         switch (interfaz_io->clase){
         case GEN:
             if(op == IO_GEN_SLEEP){
@@ -95,7 +96,9 @@ int main(int argc, char* argv[]) {
             if(op == IO_STDIN_READ){
                 uint32_t bytes_a_leer_desde_consola = buffer_read_uint32(buffer_operacion);
                 buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
+
                 io_stdin_read(buffer_operacion, bytes_a_leer_desde_consola, conexion_memoria);
+
                 responder_kernel(conexion_kernel);
             }
             break;
@@ -103,7 +106,9 @@ int main(int argc, char* argv[]) {
             if(op == IO_STDOUT_WRITE){
                 uint32_t bytes_a_leer_desde_memoria = buffer_read_uint32(buffer_operacion);
                 buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
+
                 io_stdout_write(buffer_operacion, bytes_a_leer_desde_memoria, conexion_memoria);
+
                 responder_kernel(conexion_kernel);
             }
             break;
@@ -111,15 +116,19 @@ int main(int argc, char* argv[]) {
             if(op == IO_FS_CREATE){
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
                 uint32_t length_file;
-                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);                
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+
                 io_fs_create(proceso, nombre_file, conexion_memoria);
+
                 responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_DELETE){
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+
                 io_fs_delete(proceso, nombre_file, conexion_memoria);
+
                 responder_kernel(conexion_kernel);
                 
             }
@@ -128,7 +137,10 @@ int main(int argc, char* argv[]) {
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
                 uint32_t tamanio_truncate = buffer_read_uint32(buffer_operacion);
-                
+
+
+
+                responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_WRITE){
                 // todo: se le habla a memoria
@@ -149,32 +161,12 @@ int main(int argc, char* argv[]) {
                 buffer_read(buffer_operacion, buffer_memoria->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
 
                 cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_memoria);
-                int recibir_operacion_memoria = recibir_operacion(conexion_memoria);
-                if(recibir_operacion_memoria == PETICION_LECTURA){
-                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
-                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
-
-                    void* peticion_completa = malloc(bytes_a_leer_desde_memoria);
-                    uint32_t bytes_recibidos = 0;
-                    for (size_t i = 0; i < cantidad_peticiones; i++){
-                        uint32_t bytes_peticion;
-                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
-                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
-                        bytes_recibidos += bytes_peticion;
-                        free(dato_peticion);
-                    }
-
-                    char* valor_leido = malloc(bytes_a_leer_desde_memoria + 1); // +1 para el carácter nulo al final
-                    memcpy(valor_leido, peticion_completa, bytes_a_leer_desde_memoria);
-                    valor_leido[bytes_a_leer_desde_memoria] = '\0'; // YA TENES CARGADO EL VALOR LEIDO DESDE MEMORIA 
-
-                    //TODO: ESCRIBIR EN ARCHIVO! 
-
-                    free(valor_leido);
-                    free(peticion_completa);
-                    buffer_destroy(buffer_rta_peticion_lectura);
-                }
                 
+                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria)
+                
+                buffer_destroy(buffer_memoria);
+
+                responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_READ){
                 uint32_t length_file;
@@ -220,6 +212,12 @@ int main(int argc, char* argv[]) {
 
                 cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
                 recibir_operacion(conexion_memoria);
+
+                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria)
+                
+                buffer_destroy(buffer_memoria)
+
+                responder_kernel(conexion_kernel);
             }
             break;
         default:
