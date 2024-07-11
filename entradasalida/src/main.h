@@ -41,8 +41,7 @@ typedef enum {
 } IO_class;
 
 //nos llega el char de la interfaz (mouse, teclado, impresora), y el config que SUPONEMOS que viene del kernel segun la interfaz
-typedef struct
-{
+typedef struct{
     char* nombre_id;
     t_config* archivo;
     IO_class clase;
@@ -75,11 +74,11 @@ IO_class selector_carga_config(t_config*);
 void responder_kernel(int socket_k);
 
 // INSTRUCCIONES DE IO
-void io_gen_sleep(uint32_t work_unit);
-void io_stdin_read(uint32_t reg_d, uint32_t reg_s, int socket_m);
-void io_stdout_write(uint32_t reg_d, uint32_t reg_s, int socket_m);
-void io_fs_create(char* nombre_archivo); //IO_FS_CREATE (Interfaz, Nombre Archivo):
-void io_fs_delete(char* nombre_archivo, int socket_m); 
-void io_fs_truncate(char* nombre_archivo, uint32_t reg_s, int socket_m);
-void io_fs_write(char* nombre_archivo, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m);
-void io_fs_read(char* nombre_archivo, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero
+void io_gen_sleep(uint32_t work_u);
+void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
+void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
+void io_fs_create(uint32_t proceso, char* arch, int socket_m);
+void io_fs_delete(uint32_t proceso, char* arch, int socket_m);
+void io_fs_truncate(char* arch, uint32_t reg_s, int socket_m);
+void io_fs_write(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m);
+void io_fs_read(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero

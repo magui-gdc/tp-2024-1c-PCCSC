@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
-    t_config *archivo_config = iniciar_config("kernel.config");
+    t_config *archivo_config = iniciar_config("kernelIO.config");
     cargar_config_struct_KERNEL(archivo_config);
     algoritmo_planificacion = obtener_algoritmo_planificacion();
     logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_DEBUG);
@@ -840,57 +840,64 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
     
     // 2. Identifico el tipo de interfaz que corresponde según la instrucción y tomo los datos del buffer
     char tipo_interfaz[11];
+    log_debug(logger, "offset actual %u", buffer_desalojo->offset);
     uint32_t length_io;
     char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io); // en todas las INST de IO llega primero el nombre de la interfaz
     interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0';
-
+    log_debug(logger, "offset actual %u", buffer_desalojo->offset);
     t_sbuffer* buffer_instruccion_io; // aca voy cargando el buffer para enviar / reservar según si la interfaz esté disponible o no
 
     if(instruccion == IO_GEN_SLEEP){
         strcpy(tipo_interfaz, "GENERICA");
-        buffer_instruccion_io = buffer_create(sizeof(uint32_t));
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // CANTIDAD UNIDADES DE TRABAJO
-        recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB y libera buffer
-    } else if(instruccion == IO_STDIN_READ){
-        strcpy(tipo_interfaz, "STDIN");
         buffer_instruccion_io = buffer_create(sizeof(uint32_t) * 2);
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO DIRECCION
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
+        buffer_add_uint32(buffer_instruccion_io, proceso_desalojado->pid);
+        uint32_t iteraciones = buffer_read_uint32(buffer_desalojo);
+        buffer_add_uint32(buffer_instruccion_io, iteraciones); // CANTIDAD UNIDADES DE TRABAJO
         recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB y libera buffer
-    } else if(instruccion == IO_STDOUT_WRITE){
-        strcpy(tipo_interfaz, "STDOUT");
-        buffer_instruccion_io = buffer_create(sizeof(uint32_t) * 2);
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO DIRECCION
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
-        recupera_contexto_proceso(buffer_desalojo); // guarda contexto en PCB y libera buffer
+
+    } else if(instruccion == IO_STDIN_READ || instruccion == IO_STDOUT_WRITE){
+        if(instruccion == IO_STDIN_READ) strcpy(tipo_interfaz, "STDIN"); else strcpy(tipo_interfaz, "STDOUT");
+        buffer_read_registros(buffer_desalojo, &(proceso_desalojado->registros)); // actualiza contexto
+        uint32_t nuevo_tamanio = buffer_desalojo->size - length_io - sizeof(uint32_t) * 7 - sizeof(uint8_t) * 4 - sizeof(uint32_t);        
+        buffer_instruccion_io = buffer_create(nuevo_tamanio);
+        log_debug(logger, "offset por ahora %u", buffer_desalojo->offset);
+        buffer_read(buffer_desalojo, buffer_instruccion_io->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
+        buffer_destroy(buffer_desalojo);
+        /*
+        unsigned char *buffer_data = (unsigned char *)buffer_instruccion_io->stream;
+        // Imprime el contenido del stream del buffer
+        for (uint32_t i = 0; i < buffer_instruccion_io->size; ++i) {
+            log_debug(logger, "%02X ", buffer_data[i]); // Imprime en formato hexadecimal
+        }
+        */
     } else if (instruccion == IO_FS_CREATE || instruccion == IO_FS_DELETE){
         strcpy(tipo_interfaz, "DIALFS");
         uint32_t length_file;
         char* nombre_file = buffer_read_string(buffer_desalojo, &length_file);
         recupera_contexto_proceso(buffer_desalojo);
-        buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t));
+        buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t) * 2);
+        buffer_add_uint32(buffer_instruccion_io, proceso_desalojado->pid);
         buffer_add_string(buffer_instruccion_io, length_file, nombre_file); // NOMBRE ARCHIVO FILE SYSTEM
         free(nombre_file);
+
     } else if (instruccion == IO_FS_TRUNCATE){
         strcpy(tipo_interfaz, "DIALFS");
         uint32_t length_file;
         char* nombre_file = buffer_read_string(buffer_desalojo, &length_file);
-        buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t) * 2);
+        buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t) * 3);
+        buffer_add_uint32(buffer_instruccion_io, proceso_desalojado->pid);
         buffer_add_string(buffer_instruccion_io, length_file, nombre_file); // NOMBRE ARCHIVO FILE SYSTEM
         buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
         recupera_contexto_proceso(buffer_desalojo);
         free(nombre_file);
+        
     } else if (instruccion == IO_FS_WRITE || IO_FS_READ){
         strcpy(tipo_interfaz, "DIALFS");
-        uint32_t length_file;
-        char* nombre_file = buffer_read_string(buffer_desalojo, &length_file);
-        buffer_instruccion_io = buffer_create(length_file + sizeof(uint32_t) * 4);
-        buffer_add_string(buffer_instruccion_io, length_file, nombre_file); // NOMBRE ARCHIVO FILE SYSTEM
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO DIRECCION
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO TAMANIO
-        buffer_add_uint32(buffer_instruccion_io, buffer_read_uint32(buffer_desalojo)); // REGISTRO PUNTERO ARCHIVO
-        recupera_contexto_proceso(buffer_desalojo);
-        free(nombre_file);
+        buffer_read_registros(buffer_desalojo, &(proceso_desalojado->registros)); // actualiza contexto
+        uint32_t nuevo_tamanio = buffer_desalojo->size - length_io -  sizeof(uint32_t) * 8 - sizeof(uint8_t) * 4; // le resto tamanio del nombre interfaz + registros 
+        buffer_instruccion_io = buffer_create(nuevo_tamanio);
+        buffer_read(buffer_desalojo, buffer_instruccion_io->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
+        buffer_destroy(buffer_desalojo);
     }
 
     log_debug(logger, "recibimos instruccion IO %d de tipo %s la interfaz %s.", instruccion, tipo_interfaz, interfaz_solicitada);
