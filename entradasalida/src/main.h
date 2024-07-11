@@ -5,6 +5,7 @@
 #include <commons/bitarray.h>
 #include <utils/buffer.h>
 #include <semaphore.h>
+#include "filesystem.h"
 
 typedef struct
 {
@@ -72,25 +73,12 @@ IO_class selector_carga_config(t_config*);
 
 void responder_kernel(int socket_k);
 
-////// DIALFS
-
-// FUNCIONES PRINCIPALES
-void crear_archivo(const char* nombre_archivo, t_bitarray* bitarray);   //t_bitarray ES DE LAS COMMONS!
-void eliminar_archivo(const char* nombre_archivo, t_bitarray* bitarray);
-void truncar_archivo(const char* nombre_archivo, int nuevo_tamano, t_bitarray* bitarray);
-void leer_archivo(const char* nombre_archivo, int offset, int size, char* buffer, t_bitarray* bitarray);
-void escribir_archivo(const char* nombre_archivo, int offset, int size, const char* buffer, t_bitarray* bitarray);
-void compactar_fs(t_bitarray* bitarray);
-bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
-bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);
-char* obtener_path();
-
 // INSTRUCCIONES DE IO
 void io_gen_sleep(uint32_t work_u);
 void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
 void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
-void io_fs_create(char* arch, int socket_m);
-void io_fs_delete(char* arch, int socket_m);
+void io_fs_create(uint32_t proceso, char* arch, int socket_m);
+void io_fs_delete(uint32_t proceso, char* arch, int socket_m);
 void io_fs_truncate(char* arch, uint32_t reg_s, int socket_m);
 void io_fs_write(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m);
 void io_fs_read(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero

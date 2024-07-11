@@ -3,25 +3,29 @@
 #include <utils/hello.h>
 #include "main.h"
 
-config_struct config;
+extern t_config* config;
+
+//TODO:::::: CHECKEAR QUE LOS MALLOCS SE LIBEREN!!!!!!!!!!
 
 int main(int argc, char* argv[]) {
     
     int conexion_kernel, conexion_memoria;
     char* nombre = obtener_path(); 
     char archivo_log[64];
-    strcpy(archivo_log, nombre);
-    strcat(archivo_log, ".log");
-    logger = log_create(archivo_log, "Interfaz I/O", 0, LOG_LEVEL_DEBUG);
-
-    decir_hola("una Interfaz de Entrada/Salida");
-
-     //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     char archivo_configuracion[64];
     strcpy(archivo_configuracion, nombre);
     strcat(archivo_configuracion, ".config");
+    strcpy(archivo_log, nombre);
+    strcat(archivo_log, ".log");
     t_config* archivo_config = config_create(archivo_configuracion);
+    logger = log_create(archivo_log, "Interfaz I/O", 0, LOG_LEVEL_DEBUG);
+    decir_hola("una Interfaz de Entrada/Salida");
+    
+     //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
+    if(interfaz_io->clase == FS){
+        fs_create();
+    }
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
 
@@ -107,13 +111,16 @@ int main(int argc, char* argv[]) {
             if(op == IO_FS_CREATE){
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
                 uint32_t length_file;
-                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
-                
+                char* nombre_file = buffer_read_string(buffer_operacion, &length_file);                
+                io_fs_create(proceso, nombre_file, conexion_memoria);
+                responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_DELETE){
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
+                io_fs_delete(proceso, nombre_file, conexion_memoria);
+                responder_kernel(conexion_kernel);
                 
             }
             if(op == IO_FS_TRUNCATE){
@@ -450,67 +457,6 @@ void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
         buffer_destroy(buffer_rta_peticion_lectura);
 
     }
-
-    /*
-    uint32_t asig_esp = sizeof(char) * size;
-    char* output = malloc(asig_esp);
-
-    t_sbuffer* buffer_memoria = buffer_create(
-        sizeof(int) // respuesta de memoria
-        + sizeof(uint32_t) // direccion de memoria
-        + (uint32_t)strlen(output) + sizeof(uint32_t) // string que dara memoria
-    );
-
-    buffer_add_uint32(buffer_memoria, direc);
-    //TODO: aca no va IO_STDOUT_WRITE, sino la instruccion que corresponda al cargado de datos en memoria (que puede ser esta misma si quieren)
-    cargar_paquete(socket, IO_STDOUT_WRITE, buffer_memoria);
-
-    // ESPERO RESPUESTA DE MEMORIA
-
-    //TODO: verificar el "ok" de memoria
-
-    int ok = 0;
-    while (ok == 0){ // este while tal vez esta de mas
-        int op_code = recibir_operacion(socket);
-        if(op_code == IO_MEMORY_DONE){ //TODO: esto no es un semaforo? podriamos hacer un semaforo que se comunique entre memoria-IO?
-            ok = buffer_read_int(buffer_memoria); //?
-            direc = buffer_read_uint32(buffer_memoria); //lo avanzo uno pero en realidad no me importa obtener este valor
-            output = buffer_read_string(buffer_memoria, &size); 
-
-            if(ok == -1){ //?
-                log_error(logger, "Error al descargar el valor de memoria");
-                exit(EXIT_FAILURE);
-            }
-
-
-        }
-    }
-
-    printf("Output obtenido: %s", output);
-    
-    buffer_destroy(buffer_memoria); */
-}
-
-    ///////////////////////// DIALFS   /////////////////////////
-
-void io_fs_create(char* arch, int socket){
-
-}
-
-void io_fs_delete(char* arch, int socket){
-
-}
-
-void io_fs_truncate(char* arch, uint32_t size, int socket){
-    
-}
-
-void io_fs_write(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
-
-}
-
-void io_fs_read(char* arch, uint32_t direc, uint32_t size, uint32_t pointer, int socket){
-
 }
 
 
