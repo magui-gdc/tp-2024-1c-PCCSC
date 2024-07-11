@@ -73,12 +73,7 @@ IO_class selector_carga_config(t_config*);
 
 void responder_kernel(int socket_k);
 
-// INSTRUCCIONES DE IO
+/*      INSTRUCCIONES IO     */ 
 void io_gen_sleep(uint32_t work_u);
 void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
 void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket);
-void io_fs_create(uint32_t proceso, char* arch, int socket_m);
-void io_fs_delete(uint32_t proceso, char* arch, int socket_m);
-void io_fs_truncate(char* arch, uint32_t reg_s, int socket_m);
-void io_fs_write(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m);
-void io_fs_read(char* arch, uint32_t reg_d, uint32_t reg_s, uint32_t reg_p, int socket_m); //TODO: estos ultimos dos, como dije en cpu, no se si el reg_p es un entero

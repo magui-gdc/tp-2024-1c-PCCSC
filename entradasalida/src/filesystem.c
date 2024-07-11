@@ -277,7 +277,6 @@ void io_fs_write(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t poi
 
         fclose(archivo_metadata);
     
-        buffer_destroy(buffer_memoria);
 
         log_escribir_archivo(logger, pid, nombre_archivo, size, pointer);
 
@@ -300,7 +299,7 @@ void io_fs_read(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t offs
 
     char* datos_leidos = (char*)malloc(size);
     fread(datos_leidos, size, 1, archivo_metadata);
-    fclose(archivo_metadata)
+    fclose(archivo_metadata);
     // hacer el buffer
     
 

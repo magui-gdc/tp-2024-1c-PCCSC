@@ -182,7 +182,7 @@ int main(int argc, char* argv[]) {
 
                 char* dato_a_leer_desde_archivo = malloc(bytes_a_leer_desde_archivo + 1); // dato + /0
 
-                // TODO: CARGAR DATO DESDE ARCHIVO EN dato_a_leer_desde_archivo
+                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria)
 
                 int cantidad_peticiones_memoria = buffer_read_int(buffer_operacion);
                 uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
@@ -212,8 +212,6 @@ int main(int argc, char* argv[]) {
 
                 cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
                 recibir_operacion(conexion_memoria);
-
-                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria)
                 
                 buffer_destroy(buffer_memoria)
 
