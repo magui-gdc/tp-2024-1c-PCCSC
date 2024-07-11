@@ -1,9 +1,5 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <utils/hello.h>
 #include "main.h"
-
-extern t_config* config;
 
 //TODO:::::: CHECKEAR QUE LOS MALLOCS SE LIBEREN!!!!!!!!!!
 
@@ -24,7 +20,8 @@ int main(int argc, char* argv[]) {
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
     if(interfaz_io->clase == FS){
-        fs_create();
+        path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
+        //fs_create();
     }
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
@@ -118,7 +115,7 @@ int main(int argc, char* argv[]) {
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
 
-                io_fs_create(proceso, nombre_file, conexion_memoria);
+                // io_fs_create(proceso, nombre_file);
 
                 responder_kernel(conexion_kernel);
             }
@@ -127,7 +124,7 @@ int main(int argc, char* argv[]) {
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
 
-                io_fs_delete(proceso, nombre_file, conexion_memoria);
+                // io_fs_delete(proceso, nombre_file);
 
                 responder_kernel(conexion_kernel);
                 
@@ -162,7 +159,7 @@ int main(int argc, char* argv[]) {
 
                 cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_memoria);
                 
-                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria)
+                //io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria);
                 
                 buffer_destroy(buffer_memoria);
 
@@ -182,7 +179,7 @@ int main(int argc, char* argv[]) {
 
                 char* dato_a_leer_desde_archivo = malloc(bytes_a_leer_desde_archivo + 1); // dato + /0
 
-                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria)
+                //io_fs_read(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria);
 
                 int cantidad_peticiones_memoria = buffer_read_int(buffer_operacion);
                 uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
@@ -213,7 +210,7 @@ int main(int argc, char* argv[]) {
                 cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
                 recibir_operacion(conexion_memoria);
                 
-                buffer_destroy(buffer_memoria)
+                // buffer_destroy(buffer_memoria); NO!! se hace al final por fuera del switch!!!
 
                 responder_kernel(conexion_kernel);
             }
@@ -312,7 +309,7 @@ char* obtener_path(){
 
 void cargar_config_struct_IO_gen(t_config* archivo_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
-    config.tiempo_unidad_trabajo = config_get_string_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
+    config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
     config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
     config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
 }
@@ -331,7 +328,7 @@ void cargar_config_struct_IO_in(t_config* archivo_config){
 
 void cargar_config_struct_IO_out(t_config* archivo_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
-    config.tiempo_unidad_trabajo = config_get_string_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
+    config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
     config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
     config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
     config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
@@ -342,15 +339,15 @@ void cargar_config_struct_IO_out(t_config* archivo_config){
 
 void cargar_config_struct_IO_fs(t_config* archivo_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
-    config.tiempo_unidad_trabajo = config_get_string_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
+    config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
     config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
     config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
     config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
     config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
     config.path_base_dialfs = config_get_string_value(archivo_config, "PATH_BASE_DIALFS");
-    config.block_size = config_get_string_value(archivo_config, "BLOCK_SIZE");
-    config.block_count = config_get_string_value(archivo_config, "BLOCK_COUNT");
-    config.block_count = config_get_string_value(archivo_config, "RETRASO_COMPACTACION");
+    config.block_size = config_get_int_value(archivo_config, "BLOCK_SIZE");
+    config.block_count = config_get_int_value(archivo_config, "BLOCK_COUNT");
+    config.block_count = config_get_int_value(archivo_config, "RETRASO_COMPACTACION");
 }
 
 //-----------------FUNCIONES DE IO-----------------//
@@ -358,8 +355,7 @@ void cargar_config_struct_IO_fs(t_config* archivo_config){
     ///////////////////////// GENERICA /////////////////////////
 
 void io_gen_sleep(uint32_t iteraciones){
-    char* tiempo = config.tiempo_unidad_trabajo; 
-    usleep(atoi(tiempo) * iteraciones * 1000); // EL TIEMPO UNIDAD TRABAJO ESTÁ EXPRESADO EN MS => usar usleep que trabaja con microsegundos! 
+    usleep( config.tiempo_unidad_trabajo * iteraciones * 1000); // EL TIEMPO UNIDAD TRABAJO ESTÁ EXPRESADO EN MS => usar usleep que trabaja con microsegundos! 
 }
 
     ///////////////////////// STDIN    /////////////////////////

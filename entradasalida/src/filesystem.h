@@ -6,10 +6,29 @@
 #include <utils/buffer.h>
 #include <semaphore.h>
 
+typedef struct { 
+    int BLOQUE_INICIAL;
+    int TAMANIO_ARCHIVO;
+} archivo_metadata;
+
+typedef struct{
+    char* tipo_interfaz;
+    int tiempo_unidad_trabajo;
+    char* ip_kernel;
+    char* puerto_kernel;
+    char* ip_memoria;
+    char* puerto_memoria;
+    char* path_base_dialfs;
+    int block_size;
+    int block_count;
+    int retraso_compactacion;
+} config_struct;
+
 extern t_bitarray *bitmap_bloques;
 extern FILE* bloques_dat;
 extern FILE* bitmap_dat;
-extern char* path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
+extern char* path_bloques; 
+extern config_struct config;
 
 /*          NACIMIENTO            */
 
@@ -24,7 +43,7 @@ void destroy_bitmap_bloques();
 
 
 /*          FUNCIONES PRINCIPALES            */
-void f_create();
+void fs_create();
 void compactar_bloques();
 void crear_archivo(const char* nombre_archivo, t_bitarray* bitarray);   //t_bitarray ES DE LAS COMMONS!
 void eliminar_archivo(const char* nombre_archivo, t_bitarray* bitarray);
@@ -37,11 +56,13 @@ bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metad
 char* obtener_path();
 void escribir_bloquesdat();
 void cargar_bloque(FILE* archivo_metadata, char* contenido);
+int contar_bloques_libres();
+int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada);
 
 /*      FUNCIONES IO FS     */ 
-void io_fs_create(uint32_t pid, char* arch, int socket_m);
-void io_fs_delete(uint32_t pid, char* arch, int socket_m);
-void io_fs_truncate(uint32_t pid, char* arch, uint32_t reg_s, int socket_m);
+void io_fs_create(uint32_t pid, char* arch);
+void io_fs_delete(uint32_t pid, char* arch);
+void io_fs_truncate(uint32_t pid, char* arch, uint32_t reg_s);
 void io_fs_write(uint32_t pid, char* arch, uint32_t bytes, uint32_t reg_p, int socket_m);
 void io_fs_read(uint32_t pid, char* arch, uint32_t bytes, uint32_t reg_p, int socket_m); 
 

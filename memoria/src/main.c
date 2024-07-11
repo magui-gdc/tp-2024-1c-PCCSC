@@ -10,7 +10,7 @@ pthread_t thread_memoria;
 int main(int argc, char *argv[]){
 
     // ------ INICIALIZACIÓN VARIABLES GLOBALES ------ //
-    t_config *archivo_config = iniciar_config("memoriaIO.config");
+    t_config *archivo_config = iniciar_config("memoria.config");
     cargar_config_struct_MEMORIA(archivo_config);
     logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
     decir_hola("Memoria");

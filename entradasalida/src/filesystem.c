@@ -1,18 +1,20 @@
-#include <stdlib.h>
-#include <stdio.h>
 #include <utils/hello.h>
 #include <string.h>
-#include "filesy00stem.h"
-#include "main.c"
-#include "logs.c"
+#include "filesystem.h"
+#include <math.h>
+#include "logs.h"
 
-extern t_config* config;
+config_struct config;
+char* path_bloques; 
+t_bitarray *bitmap_bloques;
+FILE* bloques_dat;
+FILE* bitmap_dat;
 
+/*
+//     NACIMIENTO    
 
-/*          NACIMIENTO            */
-
-void create_bloques_dat(char* path_base){
-    char * path = strcat(config.path_base_dialfs, "/bloque.dat");
+void create_bloques_dat(){
+    char *path = strcat(config.path_base_dialfs, "/bloque.dat");
     bloques_dat = fopen(path, "wb"); //un issue recomendo abrirlo con wb
 
     if(bloques_dat == NULL){
@@ -43,13 +45,15 @@ void init_bitmap_bloques(){
 }
 
 void actualizar_bitmap_dat(){
-    char * path = strcat(config.path_base_dialfs , "/bitmap.dat");
-    bitmap_dat = fopen(path, "wb");//un issue recomendo abrirlo con wb
+    char path[512]; // Asumimos que 512 es suficiente, ajusta según necesites
+    snprintf(path, sizeof(path), "%s/bitmap.dat", config.path_base_dialfs);
+    bitmap_dat = fopen(path, "wb"); //un issue recomendo abrirlo con wb
     
     for (size_t i = 0; i < config.block_count; i++) {
         bool bit = bitarray_test_bit(bitmap_bloques, i);
-        char bit_char = bit + '0';
-        fwrite(bit_char ,sizeof(char),1,bitmap_dat);
+        //uint8_t bit_guardar = bit;
+        // char bit_char = bit + '0';
+        fwrite(&bit ,sizeof(char),1,bitmap_dat);
     }
 
     fclose(bitmap_dat);
@@ -62,7 +66,7 @@ void fs_create(){
     
 }
 
-/*          MUERTE            */
+// MUERTE           
 
 void close_bloques_dat(){
     fclose(bloques_dat);
@@ -73,7 +77,7 @@ void destroy_bitmap_bloques(){
     bitarray_destroy(bitmap_bloques);
 }
 
-/*      PETICIONES      */
+// PETICIONES     
 
 void io_fs_create(uint32_t pid, char* nombre_archivo){
     if (contar_bloques_libres() >= 1){
@@ -81,21 +85,22 @@ void io_fs_create(uint32_t pid, char* nombre_archivo){
         
         FILE* archivo_metadata = fopen(path, "w");
         if(archivo_metadata == NULL){
-        log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-        return EXIT_FAILURE;        
+            log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
+            return;        
         }
     
-        int bloque_inicial = buscar_bloques_libres_contiguos(1);
-        
-        fwrite(bloque_inicial, sizeof(int), 1, archivo_metadata); // bloque inicial
-        fwrite(0, sizeof(int), 1, archivo_metadata); // tamaño de archivo
+        int bloque_inicial = buscar_bloques_libres_contiguos(1, -1);
+        int valor_cero = 0;
+
+        fwrite(&bloque_inicial, sizeof(int), 1, archivo_metadata); // bloque inicial
+        fwrite(&valor_cero, sizeof(int), 1, archivo_metadata); // tamaño de archivo
         fclose(archivo_metadata);
 
         bitarray_set_bit(bitmap_bloques, bloque_inicial);
         actualizar_bitmap_dat();
     
         //cargar_bloque(archivo_metadata);
-        log_crear_archivo(pid, nombre_archivo);
+        log_crear_archivo(logger, pid, nombre_archivo);
     } else {
         log_error(logger, "No hay bloques disponibles en el FS");
     }
@@ -110,7 +115,7 @@ void io_fs_delete(uint32_t pid, char* nombre_archivo){
     FILE* archivo_metadata = fopen(path, "r");
     if(archivo_metadata == NULL){
         log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-        return EXIT_FAILURE;        
+        return;        
     }
     fread(&bloque_inicial, sizeof(int), 1, archivo_metadata);
     fread(&tamanio, sizeof(int), 1, archivo_metadata);
@@ -139,16 +144,16 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
     FILE* archivo_metadata = fopen(path, "r");
     if(archivo_metadata == NULL){
         log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-        return EXIT_FAILURE;        
+        return;        
     }
     fread(&bloque_inicial, sizeof(int), 1, archivo_metadata);
     fread(&tamanio, sizeof(int), 1, archivo_metadata);
     fclose(archivo_metadata);
 
-    FILE* archivo_metadata = fopen(path, "w");
+    archivo_metadata = fopen(path, "w");
     if(archivo_metadata == NULL){
         log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-        return EXIT_FAILURE;        
+        return;        
     }
 
     if(cant_bloques < nueva_cant_bloques){
@@ -170,8 +175,8 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
             } else if (pos_inicial_nueva =! -1){ //busco lugar con n cantidad de bloques contiguos libres
                 pos_inicial_nueva = buscar_bloques_libres_contiguos(nueva_cant_bloques, -1);
                 
-                char* contenido = malloc(uint32_t);
-                char* leido =  malloc(uint32_t);
+                char* contenido = malloc(sizeof(uint32_t));
+                char* leido =  malloc(sizeof(uint32_t));
 
                 fseek(bloques_dat, bloque_inicial*config.block_size, SEEK_SET);
                 for(int i = 0; i < tamanio; i++){
@@ -306,7 +311,7 @@ void io_fs_read(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t offs
     log_leer_archivo(logger,pid, nombre_archivo, int size, void* pointer);
 }
 
-/*      MANEJO BLOQUES Y BITMAP     */
+// MANEJO BLOQUES Y BITMAP   
 
 int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada){
     int bloques_encontrados = 0;
@@ -366,7 +371,7 @@ void cargar_bloque(FILE* archivo_metadata, uint32_t offset, char* contenido){  /
     // escribo
     fwrite(contenido, config.block_size, cantidad_bloques, bloques_dat) //esto puede excederse del archivo, pero está confiando de que no puede llegar un archivo que exceda por el checkeo
     //chequear que bloque se haya cargado bien
-    if(/*bloque mal cargado*/){
+    if(bloque mal cargado){
         log_error(logger,"Error al cargar bloque.")
         return EXIT_FAILURE;
     }
@@ -383,7 +388,7 @@ void escribir_bloquesdat(FILE* archivo_metadata, int reg_d){
     
 }
 
-/*      COMPACTACION     */ 
+// COMPACTACION    
 
 int primer_bloque_libre(){
     for(int i=0, i<config.block_count, i++){
@@ -446,3 +451,4 @@ bool check_size(uint32_t size, uint32_t pointer, FILE* archivo_metadata){
 
     
 }
+*/

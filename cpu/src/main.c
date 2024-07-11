@@ -293,7 +293,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t valor_a_escribir = obtener_valor_registro(registro_dato);
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_sbuffer* buffer_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, valor_a_escribir);
+            t_sbuffer* buffer_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, &valor_a_escribir);
             
             cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu);
             recibir_operacion(conexion_memoria); // espera respuesta de memoria
@@ -314,7 +314,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t bytes_a_leer = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
 
             // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
-            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, bytes_a_leer, 0);
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, bytes_a_leer, &bytes_a_leer);
             
             cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
@@ -359,20 +359,21 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 */
             }
         } else if (strcmp(comando, "COPY_STRING") == 0){
-            char* tamanio_a_leer = tokens[1];
-            uint32_t direccion_logica = obtener_valor_registro("SI");
-            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio_a_leer, 0);
+            uint32_t tamanio_a_leer = atoi(tokens[1]);
+            uint32_t direccion_logica_lectura = obtener_valor_registro("SI");
+            uint32_t direccion_logica_escritura = obtener_valor_registro("DI");
+            t_sbuffer* buffer_mmu_lectura = mmu("LEER", direccion_logica_lectura, tamanio_a_leer, &tamanio_a_leer);
             
-            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu_lectura);
             int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
             switch (recibir_operacion_memoria){
                 case PETICION_LECTURA: 
                     t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
-                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+                    int cantidad_peticiones_lectura = buffer_read_int(buffer_rta_peticion_lectura);
                     
                     void* peticion_completa = malloc(tamanio_a_leer);
                     uint32_t bytes_recibidos = 0;
-                    for (size_t i = 0; i < cantidad_peticiones; i++){
+                    for (size_t i = 0; i < cantidad_peticiones_lectura; i++){
                         uint32_t bytes_peticion;
                         void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
                         memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
@@ -380,21 +381,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                         free(dato_peticion);
                     }
 
-                    // se asigna el valor al registro que corresponda
-                    char valor_leido_str[16];
-                    if (tamanio_a_leer == 1) {
-                        uint8_t valor_leido;
-                        memcpy(&valor_leido, peticion_completa, tamanio_a_leer);
-                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
-                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
-                    } else {
-                        uint32_t valor_leido;
-                        memcpy(&valor_leido, peticion_completa, tamanio_a_leer);
-                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
-                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
-                    }
+                    t_sbuffer* buffer_mmu_escritura = mmu("ESCRIBIR", direccion_logica_escritura, tamanio_a_leer, peticion_completa);
+                    cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu_escritura);
+                    recibir_operacion(conexion_memoria); // espera que cargue valor en memoria
 
-                    set("DI", valor_leido_str);
                     free(peticion_completa);
                     buffer_destroy(buffer_rta_peticion_lectura);
                 break;
@@ -450,7 +440,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t tamanio = obtener_valor_registro(registro_tamanio); 
 
             // indico a MMU LEER para que sólo cargue las direcciones físicas sobre las cuales tiene que escribir/leer el dato leído por consola/pedido por IO.
-            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio, 0);
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio, &tamanio);
             
             t_sbuffer *buffer_interfaz_stdin_stdout = buffer_create(
                 strlen(nombre_interfaz) + sizeof(uint32_t) // nombre interfaz
@@ -521,7 +511,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             uint32_t reg_p = obtener_valor_registro(tokens[5]); 
 
             // indico a MMU LEER para que solo cargue las direcciones físicas sobre las cuales tiene que escribir/leer el dato leído por consola/pedido por IO.
-            t_sbuffer* buffer_mmu = mmu("LEER", reg_d, reg_t, 0);
+            t_sbuffer* buffer_mmu = mmu("LEER", reg_d, reg_t, &reg_t);
 
             t_sbuffer *buffer_interfaz_fs_write_read = buffer_create(
                 strlen(nombre_interfaz) + sizeof(uint32_t) // Nombre interfaz
@@ -606,8 +596,8 @@ void* recibir_interrupcion(void* conexion){
     return NULL;
 }
 
-t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir) {
-    uint32_t dato_a_escribir = dato_escribir;
+t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, void* dato_escribir) {
+    void* dato_a_escribir = dato_escribir;
     int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
     int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
     
@@ -648,13 +638,13 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
         uint32_t direccion_fisica = marco * TAM_PAGINA + desplazamiento;
         buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
         if(strcmp(operacion, "ESCRIBIR") == 0) 
-            buffer_add_void(buffer_direcciones_fisicas, &dato_a_escribir, bytes_peticion); // el void* + su tamanio (bytes_peticion)
+            buffer_add_void(buffer_direcciones_fisicas, dato_a_escribir, bytes_peticion); // el void* + su tamanio (bytes_peticion)
         else 
             buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion); // sólo su tamanio si es lectura
         
     } else {
         void* datos_a_enviar = NULL; // acá se va a reservar el "cacho" del dato que se va a pasar por petición (si es que la peticion es de tipo ESCRIBIR)
-        void* dato_enviar = &dato_a_escribir; // guardo una referencia del dato completo que se va a enviar para pasarlo de a partes
+        void* dato_enviar = dato_a_escribir; // guardo una referencia del dato completo que se va a enviar para pasarlo de a partes
         uint32_t bytes_pendientes = bytes_peticion;
         uint32_t bytes_a_enviar_por_peticion = 0;
         uint32_t bytes_enviados = 0;

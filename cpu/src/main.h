@@ -48,7 +48,7 @@ t_list* filtrar_y_remover_lista(t_list* lista_original, bool(*condicion)(void*, 
 // cálculos dirección lógica - física para mandar a ejecutar en las instrucciones que corresponda
 // devuelve un buffer cargado con la/s peticione/s a memoria para leer/escribir con los datos ya procesados (página/marco + offset + tamanio a leer/escribir + dato a escribir)
 // consulta además en el TLB
-t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, uint32_t dato_escribir); // ver si después se pasa en algún momento char* desde acá!!
+t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, void* dato_escribir); // ver si después se pasa en algún momento char* desde acá!!
 
 // manda socket PEDIR_MARCO a memoria y retorna el número de marco encontrado para el proceso y su pagina
 uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina);
