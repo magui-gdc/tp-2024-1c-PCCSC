@@ -21,10 +21,11 @@ void intToCadena(int num, char* array, int longitud);
 tiposDeDato obtenerTipo(char* registro);
 void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** dato_32bits);
 void set(char* registro, char* valor);
-void MOV_IN (char* registroDato, char* registroDireccion);
-void MOV_OUT (char* registroDireccion, char* registroDato);
+void mov_in_function(char* registroDato, char* registroDireccion);
+void mov_out_function(char* registroDireccion, char* registroDato);
 void SUM (char* registroDireccion, char* registroOrigen);
 void SUB (char* registroDireccion, char* registroOrigen);
 void jnz(char* registro, char* numeroInstruccion);
+uint32_t obtener_valor_registro(char* registro);
 
 

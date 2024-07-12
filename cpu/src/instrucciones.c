@@ -77,6 +77,21 @@ void obtenerDireccionMemoria(char* registro, uint8_t** dato_8bits, uint32_t** da
     } 
 }
 
+uint32_t obtener_valor_registro(char* registro){
+    uint8_t* valor_uint8;
+    uint32_t* valor_uint32;
+    obtenerDireccionMemoria(registro, &valor_uint8, &valor_uint32);
+    switch (obtenerTipo(registro)){
+    case _UINT8:
+        return (uint32_t)*valor_uint8; 
+    break;
+    case _UINT32:
+        return *valor_uint32;
+    break;
+    }
+    return 0;
+}
+
 void set(char* registro, char* valor){
     int valor_numerico = atoi(valor);
     
@@ -110,7 +125,7 @@ void set(char* registro, char* valor){
     */
 }
 
-void MOV_IN (char* registroDato, char* registroDireccion){
+void mov_in_function(char* registroDato, char* registroDireccion){
 
     if(obtenerTipo(registroDato) == obtenerTipo(registroDireccion)){
     
@@ -149,8 +164,8 @@ void MOV_IN (char* registroDato, char* registroDireccion){
     }
 }// Lee el valor de memoria correspondiente a la Dirección Lógica que se encuentra en el Registro Dirección y lo almacena en el Registro Datos.
 
-void MOV_OUT (char* registroDireccion, char* registroDato){
-    MOV_IN(registroDireccion, registroDato);
+void mov_out_function(char* registroDireccion, char* registroDato){
+    mov_in_function(registroDireccion, registroDato);
 }
 
 void SUM (char* registroDireccion, char* registroOrigen){

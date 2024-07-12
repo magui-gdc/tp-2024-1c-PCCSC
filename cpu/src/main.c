@@ -2,12 +2,15 @@
 #include <stdio.h>
 #include <utils/hello.h>
 #include <pthread.h>
+#include <sys/time.h>
 #include "main.h"
 #include "instrucciones.h"
+
 
 t_list* tlb_list;
 int TAM_MEMORIA;
 int TAM_PAGINA;
+int TLB_HABILITADA;
 
 config_struct config;
 t_registros_cpu registros; 
@@ -27,8 +30,9 @@ int main(int argc, char* argv[]) {
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
 
     tlb_list = list_create();
-
+    TLB_HABILITADA = (config.cantidad_entradas_tlb == 0) ? 0 : 1;
     list_interrupciones = list_create();
+
     sem_init(&mutex_lista_interrupciones, 0, 1);
 
     decir_hola("CPU");
@@ -46,30 +50,26 @@ int main(int argc, char* argv[]) {
     TAM_MEMORIA = buffer_read_int(buffer_memoria);
     TAM_PAGINA  = buffer_read_int(buffer_memoria);
     buffer_destroy(buffer_memoria);
-    log_debug(logger, "obtengo valores de tam_memoria %d y de tam_pagina %d", TAM_MEMORIA, TAM_PAGINA);
+    //log_debug(logger, "obtengo valores de tam_memoria %d y de tam_pagina %d", TAM_MEMORIA, TAM_PAGINA);
 
     // ------------ CONEXION SERVIDOR - CLIENTES ------------
     // conexion dispatch
     int socket_servidor_dispatch = iniciar_servidor(config.puerto_escucha_dispatch);
     inicializar_registros();
-    log_info(logger, config.puerto_escucha_dispatch);
-    log_info(logger, "Server CPU DISPATCH");
+    log_info(logger, "Server CPU DISPATCH, puerto %s", config.puerto_escucha_dispatch);
 
-    
     // conexion interrupt
     int socket_servidor_interrupt = iniciar_servidor(config.puerto_escucha_interrupt);
-    log_info(logger, config.puerto_escucha_interrupt);
-    log_info(logger, "Server CPU INTERRUPT"); 
+    log_info(logger, "Server CPU INTERRUPT, puerto %s", config.puerto_escucha_interrupt); 
 
     // hilo que recibe las interrupciones y las guarda en una 'lista' de interrupciones (PIC: Programmable Integrated Circuited) 
-                                                // -> (ANALIZAR BAJO QUÉ CRITERIO: ¿se podría agregar ordenado por PID y BIT DE PRIORIDAD?)
     pthread_create(&thread_interrupt, NULL, recibir_interrupcion, &socket_servidor_interrupt); 
     pthread_detach(thread_interrupt);
 
     // NO hace falta un hilo para DISPATCH porque sólo KERNEL manda solicitudes a CPU, de forma SECUENCIAL (GRADO MULTIPROCESAMIENTO = 1)
     int cliente_kernel = esperar_cliente(socket_servidor_dispatch); 
-    while(1){
-        int cod_op = recibir_operacion(cliente_kernel);
+    int cod_op;
+    while((cod_op = recibir_operacion(cliente_kernel)) != -1){
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
         switch (cod_op){
         case CONEXION:
@@ -78,7 +78,6 @@ int main(int argc, char* argv[]) {
         case EJECUTAR_PROCESO:
             seguir_ejecucion = 1;
             desalojo = 0;
-            log_debug(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
             t_sbuffer *buffer_dispatch = cargar_buffer(cliente_kernel);
@@ -86,9 +85,6 @@ int main(int argc, char* argv[]) {
             // guarda datos del buffer (contexto de proceso)
             pid_proceso = buffer_read_uint32(buffer_dispatch); // guardo PID del proceso que se va a ejecutar
             buffer_read_registros(buffer_dispatch, &(registros)); // cargo contexto del proceso en los registros de la CPU
-
-            // a modo de log: CAMBIAR DESPUÉS
-            log_debug(logger, "Recibi para ejecutar el proceso %u, junto a PC %u", pid_proceso, registros.PC);
 
             // comienzo ciclo instrucciones
             while(seguir_ejecucion){
@@ -107,7 +103,9 @@ int main(int argc, char* argv[]) {
     }
 
     //Limpieza
+    pthread_cancel(thread_interrupt);
     log_destroy(logger);
+    list_destroy(tlb_list);
 	config_destroy(archivo_config);
     liberar_conexion(conexion_memoria);
 
@@ -119,7 +117,7 @@ void cargar_config_struct_CPU(t_config* archivo_config){
     config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
     config.puerto_escucha_dispatch = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_DISPATCH");
     config.puerto_escucha_interrupt = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_INTERRUPT");
-    config.cantidad_entradas_tlb = config_get_string_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
+    config.cantidad_entradas_tlb = config_get_int_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }
 
@@ -140,6 +138,7 @@ void inicializar_registros(){
 void ciclo_instruccion(int conexion_kernel){
     // ---------------------- ETAPA FETCH ---------------------- //
     // 1. FETCH: búsqueda de la sgte instrucción en MEMORIA (por valor del Program Counter pasado por el socket)
+    log_info(logger, "PID: %u - FETCH - Program Counter: %u", pid_proceso, registros.PC); 
     // provisoriamente, le pasamos PID y PC a memoria, con codigo de operación LEER_PROCESO
     t_sbuffer *buffer = buffer_create(
         sizeof(uint32_t) * 2 // PID + PC
@@ -149,9 +148,7 @@ void ciclo_instruccion(int conexion_kernel){
     buffer_add_uint32(buffer, registros.PC);
     
     cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
-    log_debug(logger, "envio orden lectura a memoria");
 
-    // TODO: CPU ESPERA POR DETERMINADO TIEMPO A MEMORIA, y sino sigue ¿?
     if(recibir_operacion(conexion_memoria) == INSTRUCCION){
         t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
         uint32_t length;
@@ -210,15 +207,12 @@ t_list* filtrar_y_remover_lista(t_list* lista_original, bool(*condicion)(void*, 
 }
 
 void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
-    log_debug(logger, "chequeando interrupciones");
     sem_wait(&mutex_lista_interrupciones);
     if(!list_is_empty(list_interrupciones)){
         sem_post(&mutex_lista_interrupciones);
-        log_debug(logger, "hay interupciones");
         // remueve las interrupciones del proceso actual aun si el proceso ya fue desalojado => para que no se traten en la prox. ejecucion (si es que vuelve a ejecutar)
         t_list* interrupciones_proceso_actual = filtrar_y_remover_lista(list_interrupciones, coinciden_pid, proceso_pid);
         if(!list_is_empty(interrupciones_proceso_actual) && desalojo == 0){ // procesamos la interrupcion si todavia no se desalojo la ejecucion del proceso durante el proceso de EJECUCION
-            log_debug(logger, "hay interrupciones para el pid seleccionado");
             list_sort(interrupciones_proceso_actual, comparar_prioridad);
             // solo proceso la interrupcion de mas prioridad, que sera la primera!
             seguir_ejecucion = 0;
@@ -236,8 +230,6 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
 
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
-    // TODO: MMU en caso de traducción dire. lógica a dire. física
-    log_debug(logger, "CPU: LINEA DE INSTRUCCION %s", leido);
 
     char **tokens = string_split(leido, " ");
     char *comando = tokens[0];
@@ -259,16 +251,131 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             char *parametro1 = tokens[1]; 
             char *parametro2 = tokens[2]; 
             SUB(parametro1, parametro2);
+        } else if (strcmp(comando, "JNZ") == 0){
+            char *registro = tokens[1]; 
+            char *proxInstruccion = tokens[2]; 
+            jnz(registro, proxInstruccion);
         } else if (strcmp(comando, "EXIT") == 0){
             seguir_ejecucion = 0;
             desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
             t_sbuffer *buffer_desalojo = NULL;
             desalojo_proceso(&buffer_desalojo, conexion_kernel, EXIT_PROCESO);
-            // en este caso, lo desaloja y no tiene que esperar a que devuelve algo KERNEL
-        } else if (strcmp(comando, "JNZ") == 0){
-            char *registro = tokens[1]; 
-            char *proxInstruccion = tokens[2]; 
-            jnz(registro, proxInstruccion);
+        } else if (strcmp(comando, "RESIZE") == 0){
+            int tamanio_en_bytes = atoi(tokens[1]); 
+            t_sbuffer* buffer_memoria_resize = buffer_create(
+                sizeof(uint32_t) + // pid 
+                sizeof(int) // resize
+            );
+            buffer_add_uint32(buffer_memoria_resize, pid_proceso);
+            buffer_add_int(buffer_memoria_resize, tamanio_en_bytes);
+            cargar_paquete(conexion_memoria, RESIZE, buffer_memoria_resize);
+            int respuesta_resize_memoria = recibir_operacion(conexion_memoria);
+            switch (respuesta_resize_memoria){
+            case OUT_OF_MEMORY:
+                seguir_ejecucion = 0;
+                desalojo = 1;
+                t_sbuffer *buffer_out_of_memory = NULL;
+                desalojo_proceso(&buffer_out_of_memory, conexion_kernel, OUT_OF_MEMORY);
+                break;
+            default:
+                break;
+            }
+        } else if (strcmp(comando, "MOV_OUT") == 0){
+            char* registro_direccion = tokens[1];
+            char* registro_dato = tokens[2]; // donde toma el dato para escribir
+            uint32_t direccion_logica = obtener_valor_registro(registro_direccion);
+            uint32_t bytes_a_escribir = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
+            uint32_t valor_a_escribir = obtener_valor_registro(registro_dato);
+
+            // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
+            t_sbuffer* buffer_mmu = mmu("ESCRIBIR", direccion_logica, bytes_a_escribir, &valor_a_escribir);
+            
+            cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu);
+            recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            /* analizar si le puede mandar algún error
+            switch (recibir_operacion_memoria){
+            case ERROR_MEMORIA: 
+                seguir_ejecucion = 0;
+                desalojo = 1;
+                break;
+            default:
+                break;
+            }
+            */
+        } else if (strcmp(comando, "MOV_IN") == 0){
+            char* registro_dato = tokens[1]; // donde va a almacenar el valor que lee de memoria
+            char* registro_direccion = tokens[2];
+            uint32_t direccion_logica = obtener_valor_registro(registro_direccion);
+            uint32_t bytes_a_leer = (obtenerTipo(registro_dato) == _UINT8) ? 1 : 4; // 1 byte si es uint8 y 4 bytes si es uint32
+
+            // mando a MMU para que calcule dir. física y me retorne un buffer ya cargado con estos valores!
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, bytes_a_leer, &bytes_a_leer);
+            
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu);
+            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            switch (recibir_operacion_memoria){
+                case PETICION_LECTURA: 
+                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
+                    int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+                    
+                    void* peticion_completa = malloc(bytes_a_leer);
+                    uint32_t bytes_recibidos = 0;
+                    for (size_t i = 0; i < cantidad_peticiones; i++){
+                        uint32_t bytes_peticion;
+                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+                        bytes_recibidos += bytes_peticion;
+                        free(dato_peticion);
+                    }
+
+                    // se asigna el valor al registro que corresponda
+                    char valor_leido_str[16];
+                    if (bytes_a_leer == 1) {
+                        uint8_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, bytes_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                    } else {
+                        uint32_t valor_leido;
+                        memcpy(&valor_leido, peticion_completa, bytes_a_leer);
+                        snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
+                    }
+
+                    set(registro_dato, valor_leido_str);
+                    free(peticion_completa);
+                    buffer_destroy(buffer_rta_peticion_lectura);
+                break;
+            }
+        } else if (strcmp(comando, "COPY_STRING") == 0){
+            uint32_t tamanio_a_leer = atoi(tokens[1]);
+            uint32_t direccion_logica_lectura = obtener_valor_registro("SI");
+            uint32_t direccion_logica_escritura = obtener_valor_registro("DI");
+            t_sbuffer* buffer_mmu_lectura = mmu("LEER", direccion_logica_lectura, tamanio_a_leer, &tamanio_a_leer);
+            
+            cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_mmu_lectura);
+            int recibir_operacion_memoria = recibir_operacion(conexion_memoria); // espera respuesta de memoria
+            switch (recibir_operacion_memoria){
+                case PETICION_LECTURA: 
+                    t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(conexion_memoria);
+                    int cantidad_peticiones_lectura = buffer_read_int(buffer_rta_peticion_lectura);
+                    
+                    void* peticion_completa = malloc(tamanio_a_leer);
+                    uint32_t bytes_recibidos = 0;
+                    for (size_t i = 0; i < cantidad_peticiones_lectura; i++){
+                        uint32_t bytes_peticion;
+                        void* dato_peticion = buffer_read_void(buffer_rta_peticion_lectura, &bytes_peticion);
+                        memcpy(peticion_completa + bytes_recibidos, dato_peticion, bytes_peticion);
+                        bytes_recibidos += bytes_peticion;
+                        free(dato_peticion);
+                    }
+
+                    t_sbuffer* buffer_mmu_escritura = mmu("ESCRIBIR", direccion_logica_escritura, tamanio_a_leer, peticion_completa);
+                    cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_mmu_escritura);
+                    recibir_operacion(conexion_memoria); // espera que cargue valor en memoria
+
+                    free(peticion_completa);
+                    buffer_destroy(buffer_rta_peticion_lectura);
+                break;
+            }
         } else if (strcmp(comando, "WAIT") == 0 || strcmp(comando, "SIGNAL") == 0){
             char *recurso = tokens[1];
             op_code instruccion_recurso = (strcmp(comando, "WAIT") == 0) ? WAIT_RECURSO : SIGNAL_RECURSO;
@@ -278,9 +385,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
             buffer_add_string(buffer_desalojo_wait, (uint32_t)strlen(recurso), recurso);
-
-            log_debug(logger, "Recurso pedido a kernel %s", recurso);
-
             desalojo_proceso(&buffer_desalojo_wait, conexion_kernel, instruccion_recurso); // agrega ctx en el buffer y envía paquete a kernel
 
             int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
@@ -288,7 +392,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             case DESALOJAR:
                 seguir_ejecucion = 0;
                 desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                log_debug(logger, "desalojar proceso");
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
@@ -311,130 +414,69 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_gen_sleep, tiempo_sleep);
             desalojo_proceso(&buffer_interfaz_gen_sleep, conexion_kernel, IO_GEN_SLEEP); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_STDIN_READ") == 0){
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
+        } else if (strcmp(comando, "IO_STDIN_READ") == 0 || strcmp(comando, "IO_STDOUT_WRITE") == 0){
             char* nombre_interfaz = tokens[1];
-            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
-            //io_stdin_read(nombre_interfaz, registro_direccion, registro_tamaño);
-            t_sbuffer *buffer_interfaz_stdin_read = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
-                sizeof(uint32_t) * 2 // REGISTROS PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+            char* registro_direccion = tokens[2];
+            char* registro_tamanio = tokens[3];
+            uint32_t direccion_logica = obtener_valor_registro(registro_direccion);
+            uint32_t tamanio = obtener_valor_registro(registro_tamanio); 
+
+            // indico a MMU LEER para que sólo cargue las direcciones físicas sobre las cuales tiene que escribir/leer el dato leído por consola/pedido por IO.
+            t_sbuffer* buffer_mmu = mmu("LEER", direccion_logica, tamanio, &tamanio);
+            
+            t_sbuffer *buffer_interfaz_stdin_stdout = buffer_create(
+                strlen(nombre_interfaz) + sizeof(uint32_t) // nombre interfaz
+                + buffer_mmu->size + sizeof(uint32_t) // tamanio del buffer con direcciones fisicas y bytes por peticion + uint32_t para guardar el tamanio
+                + sizeof(uint32_t) // VALOR REGISTRO TAMANIO
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_string(buffer_interfaz_stdin_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_uint32(buffer_interfaz_stdin_read, reg_d);
-            buffer_add_uint32(buffer_interfaz_stdin_read, reg_t);
-            desalojo_proceso(&buffer_interfaz_stdin_read, conexion_kernel, IO_STDIN_READ); // agrega ctx en el buffer y envía paquete a kernel
+            buffer_add_string(buffer_interfaz_stdin_stdout, (uint32_t)strlen(nombre_interfaz), nombre_interfaz); // nombre interfaz
+            buffer_add_registros(buffer_interfaz_stdin_stdout, &(registros)); // contexto para que actualice antes de bloquearse por interfaz
+            buffer_add_uint32(buffer_interfaz_stdin_stdout, tamanio);
+            buffer_add_buffer(buffer_interfaz_stdin_stdout, buffer_mmu); // lo carga y libera memoria
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_STDOUT_WRITE") == 0){
-            char* nombre_interfaz = tokens[1];
-            uint32_t reg_d = (uint32_t)atoi(tokens[2]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
-            //io_stdout_write(nombre_interfaz, registro_direccion, registro_tamaño);
-            t_sbuffer *buffer_interfaz_stdout_write = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t) +
-                sizeof(uint32_t) * 2 // REGISTROS PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
-            );
+            op_code mensaje_desalojo = (strcmp(comando, "IO_STDIN_READ") == 0) ? IO_STDIN_READ : IO_STDOUT_WRITE;
+            cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_interfaz_stdin_stdout); // desaloja CPU y libera buffer creado
 
-            buffer_add_string(buffer_interfaz_stdout_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_uint32(buffer_interfaz_stdout_write, reg_d);
-            buffer_add_uint32(buffer_interfaz_stdout_write, reg_t);
-            desalojo_proceso(&buffer_interfaz_stdout_write, conexion_kernel, IO_STDOUT_WRITE); // agrega ctx en el buffer y envía paquete a kernel
-
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_FS_CREATE") == 0){
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
+        } else if (strcmp(comando, "IO_FS_CREATE") == 0 || strcmp(comando, "IO_FS_DELETE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            //io_fs_create(nombre_interfaz, nombre_archivo);
-            t_sbuffer *buffer_interfaz_fs_create = buffer_create(
+            t_sbuffer *buffer_interfaz_fs_create_delete = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
-            buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_string(buffer_interfaz_fs_create, (uint32_t)strlen(nombre_file), nombre_file);
-            desalojo_proceso(&buffer_interfaz_fs_create, conexion_kernel, IO_FS_CREATE); // agrega ctx en el buffer y envía paquete a kernel
+            buffer_add_string(buffer_interfaz_fs_create_delete, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_string(buffer_interfaz_fs_create_delete, (uint32_t)strlen(nombre_file), nombre_file);
+            op_code mensaje_desalojo = (strcmp(comando, "IO_FS_CREATE") == 0) ? IO_FS_CREATE : IO_FS_DELETE;
+            desalojo_proceso(&buffer_interfaz_fs_create_delete, conexion_kernel, mensaje_desalojo); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_FS_DELETE") == 0){
-            char* nombre_interfaz = tokens[1];
-            char* nombre_file = tokens[2];
-            //io_fs_delete(nombre_interfaz, nombre_archivo);
-            t_sbuffer *buffer_interfaz_fs_delete = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
-                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
-            );
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
 
-            buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_string(buffer_interfaz_fs_delete, (uint32_t)strlen(nombre_file), nombre_file);
-            desalojo_proceso(&buffer_interfaz_fs_delete, conexion_kernel, IO_FS_DELETE); // agrega ctx en el buffer y envía paquete a kernel
-
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
         } else if (strcmp(comando, "IO_FS_TRUNCATE") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            uint32_t reg_t = (uint32_t)atoi(tokens[3]);
-            //io_fs_truncate(nombre_interfaz, nombre_archivo, registro tamaño);
+            uint32_t reg_t = obtener_valor_registro(tokens[3]);
+
             t_sbuffer *buffer_interfaz_fs_truncate = buffer_create(
                 (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
                 + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
                 + sizeof(uint32_t) // REGISTRO PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
             );
 
@@ -443,82 +485,44 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             buffer_add_uint32(buffer_interfaz_fs_truncate, reg_t);
             desalojo_proceso(&buffer_interfaz_fs_truncate, conexion_kernel, IO_FS_TRUNCATE); // agrega ctx en el buffer y envía paquete a kernel
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_FS_WRITE") == 0){
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
+        } else if (strcmp(comando, "IO_FS_WRITE") == 0 || strcmp(comando, "IO_FS_READ") == 0){
             char* nombre_interfaz = tokens[1];
             char* nombre_file = tokens[2];
-            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
-            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
-            //io_fs_write(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
-            t_sbuffer *buffer_interfaz_fs_write = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
-                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
-                + sizeof(uint32_t) * 3 // REGISTRO PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
+            uint32_t reg_d = obtener_valor_registro(tokens[3]);
+            uint32_t reg_t = obtener_valor_registro(tokens[4]);
+            uint32_t reg_p = obtener_valor_registro(tokens[5]); 
+
+            // indico a MMU LEER para que solo cargue las direcciones físicas sobre las cuales tiene que escribir/leer el dato leído por consola/pedido por IO.
+            t_sbuffer* buffer_mmu = mmu("LEER", reg_d, reg_t, &reg_t);
+
+            t_sbuffer *buffer_interfaz_fs_write_read = buffer_create(
+                strlen(nombre_interfaz) + sizeof(uint32_t) // Nombre interfaz
+                + strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
+                + sizeof(uint32_t) * 2 // REGISTRO PARA IO (TAMANIO + PUNTERO)
+                + sizeof(uint32_t) * 7 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
                 + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
+                + buffer_mmu->size + sizeof(uint32_t)  // tamanio del buffer con direcciones fisicas y bytes por peticion + uint32_t para guardar el tamanio
             );
 
-            buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_string(buffer_interfaz_fs_write, (uint32_t)strlen(nombre_file), nombre_file);
-            buffer_add_uint32(buffer_interfaz_fs_write, reg_d);
-            buffer_add_uint32(buffer_interfaz_fs_write, reg_t);
-            buffer_add_uint32(buffer_interfaz_fs_write, reg_p);
-            desalojo_proceso(&buffer_interfaz_fs_write, conexion_kernel, IO_FS_WRITE); // agrega ctx en el buffer y envía paquete a kernel
+            buffer_add_string(buffer_interfaz_fs_write_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
+            buffer_add_registros(buffer_interfaz_fs_write_read, &(registros)); // contexto para que actualice antes de bloquearse por interfaz
+            buffer_add_string(buffer_interfaz_fs_write_read, (uint32_t)strlen(nombre_file), nombre_file);
+            buffer_add_uint32(buffer_interfaz_fs_write_read, reg_t);
+            buffer_add_uint32(buffer_interfaz_fs_write_read, reg_p);
+            buffer_add_buffer(buffer_interfaz_fs_write_read, buffer_mmu);
 
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        } else if (strcmp(comando, "IO_FS_READ") == 0){
-            char* nombre_interfaz = tokens[1];
-            char* nombre_file = tokens[2];
-            uint32_t reg_d = (uint32_t)atoi(tokens[3]);
-            uint32_t reg_t = (uint32_t)atoi(tokens[4]);
-            uint32_t reg_p = (uint32_t)atoi(tokens[5]); // no estoy seguro que sea un int esto, porque es un registro "puntero archivo"
-            //io_fs_read(nombre_interfaz, nombre_archivo, registro_direccion, registro_tamaño, registro_puntero_archivo);
-            t_sbuffer *buffer_interfaz_fs_read = buffer_create(
-                (uint32_t)strlen(nombre_interfaz) + sizeof(uint32_t)
-                + (uint32_t)strlen(nombre_file) + sizeof(uint32_t)  // NOMBRE DE ARCHIVO
-                + sizeof(uint32_t) * 3 // REGISTRO PARA IO
-                + sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
-                + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
-            );
+            op_code mensaje_desalojo = (strcmp(comando, "IO_FS_WRITE") == 0) ? IO_FS_WRITE : IO_FS_READ;
+            cargar_paquete(conexion_kernel, mensaje_desalojo, buffer_interfaz_fs_write_read); // desaloja CPU y libera buffer creado
 
-            buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_interfaz), nombre_interfaz);
-            buffer_add_string(buffer_interfaz_fs_read, (uint32_t)strlen(nombre_file), nombre_file);
-            buffer_add_uint32(buffer_interfaz_fs_read, reg_d);
-            buffer_add_uint32(buffer_interfaz_fs_read, reg_t);
-            buffer_add_uint32(buffer_interfaz_fs_read, reg_p);
-            desalojo_proceso(&buffer_interfaz_fs_read, conexion_kernel, IO_FS_READ); // agrega ctx en el buffer y envía paquete a kernel
-
-            int respuesta = recibir_operacion(conexion_kernel); // BLOQUEANTE: espera respuesta de kernel
-            switch (respuesta){
-            case DESALOJAR:
-                seguir_ejecucion = 0;
-                desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                break;
-            default:
-                // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
-                break;
-            }
-        }
-        // TODO: SEGUIR
+            // EN INST. IO no hace falta esperar respuesta de KERNEL ya que siempre se bloquea o se manda a exit en caso de error!
+            seguir_ejecucion = 0;
+            desalojo = 1; 
+            
+        } // TODO: SEGUIR
     }
     string_array_destroy(tokens);
 }
@@ -541,15 +545,14 @@ void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, 
 void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;
     interrupcion_kernel = esperar_cliente(servidor_interrupt);
-    while(1){
-        int cod_op = recibir_operacion(interrupcion_kernel);
+    int cod_op;
+    while((cod_op = recibir_operacion(interrupcion_kernel)) != -1){
         switch (cod_op){
         case CONEXION:
             recibir_conexion(interrupcion_kernel);
             break;
         case INTERRUPCION:
             
-            log_debug(logger, "RECIBISTE ALGO EN INTERRUPCION");
             t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
             
             // guarda datos del buffer (contexto de proceso)
@@ -576,6 +579,178 @@ void* recibir_interrupcion(void* conexion){
         }
     }
     return NULL;
+}
+
+t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_peticion, void* dato_escribir) {
+    void* dato_a_escribir = dato_escribir;
+    int nro_pagina = (int)floor(direccion_logica/TAM_PAGINA);
+    int desplazamiento = direccion_logica - (nro_pagina * TAM_PAGINA);
+    
+    int cantidad_peticiones_memoria = (int)ceil((double)(desplazamiento + bytes_peticion)/TAM_PAGINA);  // necesitas leer/escribir X paginas
+
+    uint32_t tamanio_buffer = sizeof(uint32_t) + // pid proceso!
+        sizeof(int) + // cantidad de peticiones
+        sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
+        sizeof(uint32_t) * cantidad_peticiones_memoria; // bytes de lectura/escritura por petición (para el void* su tamanio o para lectura sólo bytes)
+    if(strcmp(operacion, "ESCRIBIR") == 0)
+        tamanio_buffer += bytes_peticion; // le agrego el tamanio total de todos los void* que voy a pasar
+
+    t_sbuffer* buffer_direcciones_fisicas = buffer_create(tamanio_buffer);
+
+    buffer_add_uint32(buffer_direcciones_fisicas, pid_proceso);
+    buffer_add_int(buffer_direcciones_fisicas, cantidad_peticiones_memoria);
+    t_tlb* entrada_tlb;
+    uint32_t marco; 
+
+    log_debug(logger, "cantidad peticiones %d para dir.logica %u y bytes %u", cantidad_peticiones_memoria, direccion_logica, bytes_peticion);
+    if(cantidad_peticiones_memoria == 1){
+        // 1. Verifica si la página está en la TLB
+        entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
+        if(!entrada_tlb){
+            if(TLB_HABILITADA) log_info(logger, "PID: %u - TLB MISS - Pagina: %d", pid_proceso, nro_pagina);
+            // A. Enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+            marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
+            // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
+            if(TLB_HABILITADA) entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
+        } else{
+            log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+            marco = entrada_tlb->marco;
+            if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
+                entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
+                //log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+            }
+        }
+
+        uint32_t direccion_fisica = marco * TAM_PAGINA + desplazamiento;
+        buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
+        if(strcmp(operacion, "ESCRIBIR") == 0) 
+            buffer_add_void(buffer_direcciones_fisicas, dato_a_escribir, bytes_peticion); // el void* + su tamanio (bytes_peticion)
+        else 
+            buffer_add_uint32(buffer_direcciones_fisicas, bytes_peticion); // sólo su tamanio si es lectura
+        
+    } else {
+        void* datos_a_enviar = NULL; // acá se va a reservar el "cacho" del dato que se va a pasar por petición (si es que la peticion es de tipo ESCRIBIR)
+        void* dato_enviar = dato_a_escribir; // guardo una referencia del dato completo que se va a enviar para pasarlo de a partes
+        uint32_t bytes_pendientes = bytes_peticion;
+        uint32_t bytes_a_enviar_por_peticion = 0;
+        uint32_t bytes_enviados = 0;
+        int peticiones_memoria = cantidad_peticiones_memoria; 
+        for (int i = 0; i < cantidad_peticiones_memoria; i++){
+           if(i == 0) // en esta primera vuelta consumo el espacio restante a partir del offset de la primera página
+                bytes_a_enviar_por_peticion = TAM_PAGINA - desplazamiento; // los bytes que entran en la primera página a partir del offset dado
+           else { // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
+                if(i < (peticiones_memoria - 1))
+                    bytes_a_enviar_por_peticion = TAM_PAGINA;
+                else 
+                    bytes_a_enviar_por_peticion = bytes_pendientes;
+           }
+
+            // 1. Verifica existencia en TLB
+            entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
+            if(!entrada_tlb){
+                if(TLB_HABILITADA) log_info(logger, "PID: %u - TLB MISS - Pagina: %d", pid_proceso, nro_pagina);
+                // 1. Enviar petición a memoria para acceder a tabla de páginas pasando número de página y pid (espera respuesta informando marco)
+                marco = solicitar_marco_a_memoria(pid_proceso, nro_pagina);
+                // B. Agregar entrada a TLB según algoritmo de TLB agregar_marco_tlb
+                if(TLB_HABILITADA) entrada_tlb = agregar_marco_tlb(pid_proceso, nro_pagina, marco);
+            } else{
+                log_info(logger, "PID: %u - TLB HIT - Pagina: %d", pid_proceso, nro_pagina);
+                marco = entrada_tlb->marco;
+                if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
+                    entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
+                    //log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+                }
+            }
+
+            uint32_t direccion_fisica = marco * TAM_PAGINA + desplazamiento;
+            buffer_add_uint32(buffer_direcciones_fisicas, direccion_fisica);
+            if(strcmp(operacion, "ESCRIBIR") == 0) {
+                // Toma del contenido de dato_enviar los primeros N (=bytes_a_enviar_por_peticion) bytes y deja el resto almacenado en dato_enviar para la próxima peticion de escritura
+                datos_a_enviar = malloc(bytes_a_enviar_por_peticion);
+                memcpy(datos_a_enviar, dato_enviar + bytes_enviados, bytes_a_enviar_por_peticion);
+                buffer_add_void(buffer_direcciones_fisicas, datos_a_enviar, bytes_a_enviar_por_peticion);
+                free(datos_a_enviar); // para la próxima petición
+            } else
+                buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion); // sólo su tamanio si es lectura
+
+
+            bytes_pendientes-= bytes_a_enviar_por_peticion;
+            bytes_enviados+=bytes_a_enviar_por_peticion;
+            nro_pagina++; // próxima petición a la página siguiente
+            desplazamiento = 0; // las páginas nuevas siempre parten de su offset 0
+        }
+    }
+    return buffer_direcciones_fisicas;
+}
+
+uint64_t obtener_timestamp() {
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    return tv.tv_sec * 1000000ULL + tv.tv_usec;
+}
+
+uint32_t solicitar_marco_a_memoria(uint32_t proceso, int pagina){
+    t_sbuffer* buffer_marco = buffer_create(
+        sizeof(uint32_t) + // pid proceso
+        sizeof(int) // pagina
+    );
+
+    buffer_add_uint32(buffer_marco, proceso);
+    buffer_add_int(buffer_marco, pagina);
+    cargar_paquete(conexion_memoria, TLB_MISS, buffer_marco);
+
+    int respuesta_memoria_marco = recibir_operacion(conexion_memoria);
+    if(respuesta_memoria_marco == MARCO_SOLICITADO){
+        t_sbuffer* buffer_marco_solicitado = cargar_buffer(conexion_memoria);
+        uint32_t marco = buffer_read_uint32(buffer_marco_solicitado);
+        log_info(logger, "PID: %u - OBTENER MARCO - Página: %d - Marco: %u", proceso, pagina, marco);
+        buffer_destroy(buffer_marco_solicitado);
+        return marco;
+    } // TODO: considerar errores!!!
+
+    return 0;
+}
+
+void remover_entrada_segun_algoritmo(){
+    int index_mas_viejo = -1;
+    uint64_t min_timestamp = UINT64_MAX;
+    for (int i = 0; i < list_size(tlb_list); i++) {
+        t_tlb* entrada = (t_tlb*)list_get(tlb_list, i);
+        if (entrada->timestamp < min_timestamp) {
+            min_timestamp = entrada->timestamp;
+            index_mas_viejo = i;
+        }
+    }
+
+    t_tlb* entrada_eliminada = (t_tlb*)list_remove(tlb_list, index_mas_viejo);
+    if (entrada_eliminada != NULL) {
+        //log_debug(logger, "se elimina la entrada del proceso %u pagina %d", entrada_eliminada->pid, entrada_eliminada->pagina);
+        free(entrada_eliminada);
+    }
+}
+
+t_tlb* agregar_marco_tlb(uint32_t proceso, int pagina, uint32_t marco){
+    // si la TLB ya está llena => sustitución por algoritmo (se saca la entrada con timestamp más viejo)
+    if(list_size(tlb_list) == config.cantidad_entradas_tlb)
+        remover_entrada_segun_algoritmo();
+
+    t_tlb* nueva_entrada_tlb = malloc(sizeof(t_tlb));
+    nueva_entrada_tlb->pid = proceso;
+    nueva_entrada_tlb->pagina = pagina;
+    nueva_entrada_tlb->marco = marco;
+    nueva_entrada_tlb->timestamp = obtener_timestamp();
+
+    list_add(tlb_list, nueva_entrada_tlb);
+    return nueva_entrada_tlb;
+}
+
+t_tlb* buscar_marco_tlb(uint32_t proceso, uint32_t nro_pagina){
+    bool comparar_pid_pagina(void *elemento){
+        t_tlb *entrada_tlb = (t_tlb *)elemento;
+        return (entrada_tlb->pid == proceso && entrada_tlb->pagina == nro_pagina);
+    }
+    t_tlb* encontrado = (t_tlb*)list_find(tlb_list, comparar_pid_pagina);
+    return encontrado; 
 }
 
 // la dejo vacía y declarada porque, a pesar de que no la requeramos acá, como importamos el utilsServer.c necesita de una defición de esta función, hay que ver qué conviene más adelante

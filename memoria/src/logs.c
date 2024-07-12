@@ -14,15 +14,12 @@ void log_cambio_estado_proceso(t_log* logger, uint32_t pid, char* estado_anterio
 }
 
 void log_creacion_destruccion_de_tabla_de_pagina(t_log* logger, uint32_t pid, int tamanio){
-    char* mensaje = (char*)malloc(128);
-    sprintf(mensaje, "PID: %d - Tamaño: %d", pid, tamanio);
-    log_info(logger, "%s", mensaje);
-    free(mensaje);
+    log_info(logger, "PID: %u - Tamaño: %d", pid, tamanio);
 };
 
 
-void log_acceso_a_tabla_de_pagina(t_log* logger, uint32_t, char* pagina, char* marco){
-
+void log_acceso_a_tabla_de_pagina(t_log* logger, uint32_t proceso, int pagina, uint32_t marco){
+    log_info(logger, "PID: %u - Pagina: %d - Marco: %u", proceso, pagina, marco);
 };
 
 void log_ampliacion_de_proceso(t_log* logger, uint32_t pid){

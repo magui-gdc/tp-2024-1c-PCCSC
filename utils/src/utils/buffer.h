@@ -52,6 +52,18 @@ void buffer_add_string(t_sbuffer *buffer, uint32_t length, char *string);
 // Lee un string y su longitud del buffer y avanza el offset
 char *buffer_read_string(t_sbuffer *buffer, uint32_t *length);
 
+// agregar datos sin importar su tipo de dato (se le pasa un void* con su tamanio)
+void buffer_add_void(t_sbuffer *buffer, void *data, uint32_t size);
+
+// leer datos sin importar su tipo de dato (se le pasa el tamanio a leer)
+void *buffer_read_void(t_sbuffer *buffer, uint32_t *size);
+
+// agregar un buffer dentro de otro buffer y libera el buffer agregado
+void buffer_add_buffer(t_sbuffer *dest, t_sbuffer *src);
+
+// leer un buffer dentro de otro buffer
+t_sbuffer* buffer_read_buffer(t_sbuffer *buffer);
+
 // Agrega registros CPU al buffer
 void buffer_add_registros(t_sbuffer *buffer, t_registros_cpu *registros);
 
