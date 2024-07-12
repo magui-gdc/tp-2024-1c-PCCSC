@@ -3,6 +3,7 @@
 #include <utils/buffer.h>
 #include <math.h>
 #include <commons/bitarray.h>
+#include <semaphore.h>
 
 typedef struct {
     char* puerto_escucha;
@@ -26,6 +27,7 @@ typedef struct{
 #ifndef PAGINACION_H
 #define PAGINACION_H
 
+extern sem_t mutex_espacio_usuario, mutex_bitmap_marcos, mutex_tablas_paginas_global;
 extern void* memoria;   // espacio de memoria real para usuario => tiene que ser un void* PORQUE TODO SE DEBE GUARDAR DE FORMA CONTIGUA
 extern t_list* lista_pcb_tablas_paginas; // lista de procesos con sus respectivas tablas de páginas
 extern t_bitarray *bitmap_marcos; // array dinámico donde su length = cantidad de marcos totales en memoria, que guarda por posición valores 0: marco libre; y 1: marco ocupado por algún proceso

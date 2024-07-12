@@ -10,6 +10,7 @@ t_list* lista_pcb_tablas_paginas; // lista de procesos con sus respectivas tabla
 t_bitarray *bitmap_marcos; // array dinámico donde su length = cantidad de marcos totales en memoria, que guarda por posición valores 0: marco libre; y 1: marco ocupado por algún proceso
 size_t cantidad_marcos_totales;
 config_struct config;
+sem_t mutex_espacio_usuario, mutex_bitmap_marcos, mutex_tablas_paginas_global;
 
 /*          NACIMIENTO            */
 
@@ -62,7 +63,9 @@ void crear_proceso(uint32_t pid, char* path, uint32_t length_path) {
     strcpy(proceso_memoria->path_proceso, path);
     proceso_memoria->tabla_paginas = list_create();
 
+    sem_wait(&mutex_tablas_paginas_global);
     list_add(lista_pcb_tablas_paginas, proceso_memoria);
+    sem_post(&mutex_tablas_paginas_global);
     log_creacion_destruccion_de_tabla_de_pagina(logger, pid, 0);
 }
 
@@ -91,6 +94,7 @@ void liberar_paginas(t_pcb* proceso_a_liberar, int cantidad_paginas_a_liberar){
     int cantidad_paginas_ocupadas = list_size(proceso_a_liberar->tabla_paginas);
     int inicio = cantidad_paginas_ocupadas - 1;
     int fin = cantidad_paginas_ocupadas - cantidad_paginas_a_liberar; // cantidad_paginas_a_liberar es igual a cantidad_paginas_ocupadas cuando se está eliminando el proceso!
+    sem_wait(&mutex_bitmap_marcos);
     for(int i = inicio; i >= fin; i--){       
         // REMUEVE LA PAGINA DE LA TABLA DEL PROCESO
         t_pagina* pagina_liberada = (t_pagina*) list_remove(proceso_a_liberar->tabla_paginas, i);
@@ -104,6 +108,7 @@ void liberar_paginas(t_pcb* proceso_a_liberar, int cantidad_paginas_a_liberar){
         // LIBERA/ELIMINA página
         free(pagina_liberada);      
     }
+    sem_post(&mutex_bitmap_marcos);
 }
 
 void eliminar_proceso(uint32_t pid){
@@ -114,7 +119,9 @@ void eliminar_proceso(uint32_t pid){
     };
 
     // 1. Busca y elimina el proceso de la lista de procesos en memoria
+    sem_wait(&mutex_tablas_paginas_global);
     t_pcb* proceso_a_eliminar = (t_pcb*)list_remove_by_condition(lista_pcb_tablas_paginas, buscar_por_pid);
+    sem_post(&mutex_tablas_paginas_global);
 
     // 2. Recorre la tabla de páginas, buscar los marcos asociados a cada una, los marca como libres y libera las páginas. 
     int tamanio_tabla_pagina = list_size(proceso_a_eliminar->tabla_paginas);
@@ -136,7 +143,9 @@ t_pcb* get_element_from_pid(uint32_t pid_buscado){
         t_pcb *pcb = (t_pcb *)elemento;
         return pcb->pid == pid_buscado;
     }
+    sem_wait(&mutex_tablas_paginas_global);
     t_pcb* encontrado = (t_pcb*)list_find(lista_pcb_tablas_paginas, comparar_pid);
+    sem_post(&mutex_tablas_paginas_global);
     return encontrado; 
 }
 
@@ -171,10 +180,12 @@ uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
     uint32_t *marcos_libres = malloc(cantidad_marcos_libres * sizeof(uint32_t));
 
     for (size_t i = 0; i < max_bit && marcos_libres_encontrados < cantidad_marcos_libres; i++) {
+        sem_wait(&mutex_bitmap_marcos);
         if (!bitarray_test_bit(bitmap_marcos, i)) {
             marcos_libres[marcos_libres_encontrados] = i;
             marcos_libres_encontrados++;
         }
+        sem_post(&mutex_bitmap_marcos);
     }
 
     if (marcos_libres_encontrados < cantidad_marcos_libres) {
@@ -184,9 +195,11 @@ uint32_t *buscar_marcos_libres(size_t cantidad_marcos_libres) {
     }
 
     // los marco como ocupados 
+    sem_wait(&mutex_bitmap_marcos);
     for (size_t i = 0; i < cantidad_marcos_libres; i++) {
         bitarray_set_bit(bitmap_marcos, marcos_libres[i]);
     }
+    sem_post(&mutex_bitmap_marcos);
 
     return marcos_libres;
 }

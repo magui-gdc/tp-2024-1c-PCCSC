@@ -5,7 +5,6 @@
 #include "main.h"
 
 pthread_t thread_memoria;
-// declarar sem
 
 int main(int argc, char *argv[]){
 
@@ -14,7 +13,9 @@ int main(int argc, char *argv[]){
     cargar_config_struct_MEMORIA(archivo_config);
     logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
     decir_hola("Memoria");
-    // TODO: init semaforo
+    sem_init(&mutex_espacio_usuario, 0, 1); 
+    sem_init(&mutex_bitmap_marcos, 0, 1); 
+    sem_init(&mutex_tablas_paginas_global, 0, 1); 
     init_memoria(); // inicializa la void* memoria y las estructuras necesarias para la paginacion
 
     // ------ INICIALIZACIÓN SERVIDOR + HILO ESCUCHA ------ //
@@ -24,6 +25,9 @@ int main(int argc, char *argv[]){
 
     servidor_escucha(&socket_servidor);
 
+    sem_destroy(&mutex_bitmap_marcos);
+    sem_destroy(&mutex_espacio_usuario);
+    sem_destroy(&mutex_tablas_paginas_global);
     log_destroy(logger);
     config_destroy(archivo_config);
     bitarray_destroy(bitmap_marcos);
@@ -329,14 +333,18 @@ uint32_t calcular_tamanio_dato_lectura(t_sbuffer* buffer, int cantidad_peticione
 void* leer_memoria(uint32_t dir_fisica, uint32_t tam_lectura){
     void* dato = malloc(tam_lectura);
     // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
+    sem_wait(&mutex_espacio_usuario);
     memcpy(dato, memoria + dir_fisica, tam_lectura);
+    sem_post(&mutex_espacio_usuario);
     return dato;
 }
 
 
 int escribir_memoria(uint32_t dir_fisica, void* dato, uint32_t tam_escritura){
     // memcpy (donde guardo el dato (posicionado) / desde dónde saco el dato (posicionado) / el tamaño de lo que quiero sacar)
+    sem_wait(&mutex_espacio_usuario);
     memcpy(memoria + dir_fisica, dato, tam_escritura);
+    sem_post(&mutex_espacio_usuario);
 
     void* dato_escrito = leer_memoria(dir_fisica, tam_escritura);
     if(!dato_escrito){
