@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
     t_io* interfaz_io = inicializar_io(nombre, archivo_config, puertos_config); //TODO: free(interfaz_io)
     if(interfaz_io->clase == FS){
         path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
-        //fs_create();
+        fs_create();
     }
 
     // EN ESTE PUNTO LA IO CUENTA CON UN CONFIG CARGADO Y UNA INTERFAZ QUE CONTIENE TANTO EL ARCHIVO CONFIG, COMO SU NOMBRE Y LA CLASE
