@@ -10,7 +10,7 @@ t_bitarray *bitmap_bloques;
 FILE* bloques_dat;
 FILE* bitmap_dat;
 
-/*
+
 //     NACIMIENTO    
 
 void create_bloques_dat(){
@@ -52,8 +52,8 @@ void actualizar_bitmap_dat(){
     for (size_t i = 0; i < config.block_count; i++) {
         bool bit = bitarray_test_bit(bitmap_bloques, i);
         //uint8_t bit_guardar = bit;
-        // char bit_char = bit + '0';
-        fwrite(&bit ,sizeof(char),1,bitmap_dat);
+        //char bit_char = bit + '0';
+        fwrite(&bit ,sizeof(bool),1,bitmap_dat);
     }
 
     fclose(bitmap_dat);
@@ -98,7 +98,7 @@ void io_fs_create(uint32_t pid, char* nombre_archivo){
 
         bitarray_set_bit(bitmap_bloques, bloque_inicial);
         actualizar_bitmap_dat();
-    
+        //TODO:
         //cargar_bloque(archivo_metadata);
         log_crear_archivo(logger, pid, nombre_archivo);
     } else {
@@ -133,12 +133,8 @@ void io_fs_delete(uint32_t pid, char* nombre_archivo){
 
 void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
     int bloque_inicial;
-    int bloque_final;
+    int bloque_final; // TODO: INICIALIZAR
     int tamanio;
-
-    int cant_bloques = (int) ceil( (double)tamanio / config.block_size);
-    int nueva_cant_bloques = (int) ceil( (double)nuevo_tamanio / config.block_size);
-
 
     char * path = strcat(config.path_base_dialfs, nombre_archivo);  
     FILE* archivo_metadata = fopen(path, "r");
@@ -149,6 +145,9 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
     fread(&bloque_inicial, sizeof(int), 1, archivo_metadata);
     fread(&tamanio, sizeof(int), 1, archivo_metadata);
     fclose(archivo_metadata);
+
+    int cant_bloques = (int) ceil( (double)tamanio / config.block_size);
+    int nueva_cant_bloques = (int) ceil( (double)nuevo_tamanio / config.block_size);
 
     archivo_metadata = fopen(path, "w");
     if(archivo_metadata == NULL){
@@ -162,26 +161,24 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
         if (contar_bloques_libres() >= cant_a_agregar){
             int pos_inicial_contigua = buscar_bloques_libres_contiguos(cant_a_agregar, bloque_inicial);
             int pos_inicial_nueva;
-            if(pos_inicial_contigua =! -1){//agregar a continuacion del bloque final
+            if(pos_inicial_contigua != -1){//agregar a continuacion del bloque final
                 for(int i = bloque_inicial; i < bloque_inicial + nueva_cant_bloques; i++){
                     if(!bitarray_test_bit(bitmap_bloques, i)){
                         bitarray_set_bit(bitmap_bloques, i);
                     }
                 }
-                fwrite(pos_inicial_contigua, sizeof(int), 1, archivo_metadata);
-                fwrite(nuevo_tamanio, sizeof(int), 1, archivo_metadata);
+                fwrite(&pos_inicial_contigua, sizeof(int), 1, archivo_metadata);
+                fwrite(&nuevo_tamanio, sizeof(uint32_t), 1, archivo_metadata);
                 fclose(archivo_metadata);
 
-            } else if (pos_inicial_nueva =! -1){ //busco lugar con n cantidad de bloques contiguos libres
+            } else if (pos_inicial_nueva != -1){ //busco lugar con n cantidad de bloques contiguos libres
                 pos_inicial_nueva = buscar_bloques_libres_contiguos(nueva_cant_bloques, -1);
                 
                 char* contenido = malloc(sizeof(uint32_t));
-                char* leido =  malloc(sizeof(uint32_t));
 
                 fseek(bloques_dat, bloque_inicial*config.block_size, SEEK_SET);
-                for(int i = 0; i < tamanio; i++){
-                    contenido += fread(&leido, sizeof(char), 1, bloques_dat);
-                } //guardo contenido antes de moverlo
+                fread(&contenido, sizeof(uint32_t), 1, bloques_dat);
+
                 for(int i = bloque_inicial; i < bloque_inicial + cant_bloques; i++){
                     bitarray_clean_bit(bitmap_bloques, i);
                 } //libero bits
@@ -189,27 +186,23 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
                     bitarray_set_bit(bitmap_bloques, i);
                 } //asigno nuevos bits
                 fseek(bloques_dat, pos_inicial_nueva*config.block_size, SEEK_SET);
-                for(int i = 0; i < tamanio; i++){
-                    fwrite(contenido[i], sizeof(char), 1, bloques_dat);
-                } //reescribo contenido contenido
+                fwrite(&contenido, sizeof(uint32_t), 1, bloques_dat);
                 
-                fwrite(pos_inicial_nueva, sizeof(int), 1, archivo_metadata);
-                fwrite(nuevo_tamanio, sizeof(int), 1, archivo_metadata);
+                fwrite(&pos_inicial_nueva, sizeof(int), 1, archivo_metadata);
+                fwrite(&nuevo_tamanio, sizeof(uint32_t), 1, archivo_metadata);
                 fclose(archivo_metadata);
                 
                 compactar_bloques();
                 free(contenido);
-                free(leido);
 
             } else { // rejuntar todos bloques sueltos y escribir ahi
                 //guardar bloques escritos
                 //liberar bit de archivo del bitmap
-                char* contenido = malloc(uint32_t);
-                char* leido =  malloc(uint32_t);
+                char* contenido = malloc(sizeof(uint32_t));
+
                 fseek(bloques_dat, bloque_inicial*config.block_size, SEEK_SET);
-                for(int i = 0; i < tamanio; i++){
-                    contenido += fread(&leido, sizeof(char), 1, bloques_dat);
-                } //guardo contenido antes de moverlo
+                fread(&contenido, sizeof(uint32_t), 1, bloques_dat);
+            
                 for(int i = bloque_inicial; i < bloque_inicial + cant_bloques; i++){
                     bitarray_clean_bit(bitmap_bloques, i);
                 } //libero bits
@@ -219,24 +212,23 @@ void io_fs_truncate(uint32_t pid, char* nombre_archivo, uint32_t nuevo_tamanio){
                     bitarray_set_bit(bitmap_bloques, i);
                 } //asigno nuevos bits
                 fseek(bloques_dat, pos_inicial_nueva*config.block_size, SEEK_SET);
-                for(int i = 0; i < tamanio; i++){
-                    fwrite(contenido[i], sizeof(char), 1, bloques_dat);
-                } //reescribo contenido contenido
+                fwrite(&contenido, sizeof(uint32_t), 1, bloques_dat);
                 
-                fwrite(pos_inicial_nueva, sizeof(int), 1, archivo_metadata);
-                fwrite(nuevo_tamanio, sizeof(int), 1, archivo_metadata);
+                fwrite(&pos_inicial_nueva, sizeof(int), 1, archivo_metadata);
+                fwrite(&nuevo_tamanio, sizeof(int), 1, archivo_metadata);
+                free(contenido);
                 fclose(archivo_metadata);
 
             }
         } else {
-            log_error(logger, "No hay mas bloques libres para realizar el truncate")
+            log_error(logger, "No hay mas bloques libres para realizar el truncate");
         }
     } else  if(cant_bloques > nueva_cant_bloques){
-        for(int i = bloque_final; i > bloque_final - nueva_cant_bloques; i++){
+        for(int i = bloque_final; i > (bloque_final - nueva_cant_bloques); i++){
             bitarray_clean_bit(bitmap_bloques, i);
         }    
-        fwrite(bloque_inicial, sizeof(int), 1, archivo_metadata);
-        fwrite(nuevo_tamanio, sizeof(int), 1, archivo_metadata);
+        fwrite(&bloque_inicial, sizeof(int), 1, archivo_metadata);
+        fwrite(&nuevo_tamanio, sizeof(uint32_t), 1, archivo_metadata);
         fclose(archivo_metadata);
     }  
     actualizar_bitmap_dat();
@@ -270,17 +262,18 @@ void io_fs_write(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t poi
             FILE* archivo_metadata = fopen(path, "r+"); //abrimos el archivo metadata y nos posicionamos al principio
             if(archivo_metadata == NULL){
                 log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-                return EXIT_FAILURE;        
+                return;        
             }
-            check_size(size, pointer, archivo_metadata);//en base al offset me fijo si excede el tamano del archivo
+            if(check_size(size, pointer, archivo_metadata)){
+                cargar_bloque(archivo_metadata, pointer, output);
+            }//en base al offset me fijo si excede el tamano del archivo
             //size cuanto quiero escrbibir, pointer es desde donde quiero escrbibir,
             // del metadata saco la posicion inicial y el tam total
             //check que lo que queda en el metadata entre 
 
-            cargar_bloque(archivo_metadata, pointer, output);
+            fclose(archivo_metadata);
         }
 
-        fclose(archivo_metadata);
     
 
         log_escribir_archivo(logger, pid, nombre_archivo, size, pointer);
@@ -298,7 +291,7 @@ void io_fs_read(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t offs
     FILE* archivo_metadata = fopen(path, "r");
     if(archivo_metadata == NULL){
         log_error(logger, "Error al abrir archivo metadata del proceso %d.", pid);
-        return EXIT_FAILURE;        
+        return;        
     }
     fseek(archivo_metadata, offset, SEEK_SET);
 
@@ -308,7 +301,7 @@ void io_fs_read(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t offs
     // hacer el buffer
     
 
-    log_leer_archivo(logger,pid, nombre_archivo, int size, void* pointer);
+    log_leer_archivo(logger,pid, nombre_archivo, size, offset);
 }
 
 // MANEJO BLOQUES Y BITMAP   
@@ -316,11 +309,10 @@ void io_fs_read(uint32_t pid, char* nombre_archivo, uint32_t size, uint32_t offs
 int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada){
     int bloques_encontrados = 0;
     if(pos_inicial_buscada == -1){ // Si es -1, entonces no nos importa la posicion de partida.
-        for(int i=0, i<config.block_count, i++){
+        for(int i=0; i<config.block_count; i++){
             if(!bitarray_test_bit(bitmap_bloques, i)){
                 bloques_encontrados++;
-                int pos_referencia = i;
-                for (pos_referencia; pos_referencia < pos_referencia + cant_bloques; pos_referencia++){
+                for(int pos_referencia = i; pos_referencia < (pos_referencia + cant_bloques); pos_referencia++){
                     if(bitarray_test_bit(bitmap_bloques, i)){ //si aun no llegamos a la cant buscada, y dio ocupado, este de referencia no nos sirve.
                         bloques_encontrados = 0;
                         break;
@@ -333,21 +325,21 @@ int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada){
         }
         return -1; //si llego hasta aca, entonces no se encontraron n bloques contiguos en todo el bitmap
     } else {
-        for(int i=pos_inicial_buscada, i<config.block_count, i++){
+        for(int i=pos_inicial_buscada; i<config.block_count; i++){
             if(!bitarray_test_bit(bitmap_bloques, i)){
                 bloques_encontrados++;
+                if(bloques_encontrados == cant_bloques)
+                    return pos_inicial_buscada; 
             }
-            if(bloques_encontrados == cant_bloques) {
-                return pos_inicial_buscada 
-            } else { return -1 } ; //devuelve -1 si no hay suficientes bloques contiguos para el truncate
         }
-        return (contar_bloques_libres() >= cant_bloques) ? compactar_bloques() : -1;
+        return -1; //devuelve -1 si no hay suficientes bloques contiguos para el truncate
+        // return (contar_bloques_libres() >= cant_bloques) ? compactar_bloques() : -1;
     }
 }
 
 int contar_bloques_libres(){
     int bloques_encontrados = 0;
-    for(int i=0, i<config.block_count, i++){
+    for(int i=0; i<config.block_count; i++){
         if(!bitarray_test_bit(bitmap_bloques, i)){
             bloques_encontrados ++;
         }
@@ -361,20 +353,21 @@ void cargar_bloque(FILE* archivo_metadata, uint32_t offset, char* contenido){  /
     
     // en base a la direccion del metadata, se obtiene el bloque inicial
     uint32_t bloque_inicial;
-    fread(bloque_inicial, sizeof(int), 1, archivo_metadata);
+    fread(&bloque_inicial, sizeof(uint32_t), 1, archivo_metadata);
 
     // posiciono el FILE donde quiero escribir dentro del archivo
-    fseek(bloques_dat, bloque_inicial*config.block_size + offset); //falta un parametro 
+    fseek(bloques_dat, bloque_inicial*config.block_size + offset, SEEK_SET); //falta un parametro 
     
     uint32_t cantidad_bloques = ceil(sizeof(contenido) / config.block_size);
     
     // escribo
-    fwrite(contenido, config.block_size, cantidad_bloques, bloques_dat) //esto puede excederse del archivo, pero está confiando de que no puede llegar un archivo que exceda por el checkeo
+    fwrite(contenido, config.block_size, cantidad_bloques, bloques_dat); //esto puede excederse del archivo, pero está confiando de que no puede llegar un archivo que exceda por el checkeo
     //chequear que bloque se haya cargado bien
-    if(bloque mal cargado){
+    // TODO:
+    /*if(bloque mal cargado){
         log_error(logger,"Error al cargar bloque.")
         return EXIT_FAILURE;
-    }
+    }*/
 }
 
 void escribir_bloquesdat(FILE* archivo_metadata, int reg_d){
@@ -391,64 +384,63 @@ void escribir_bloquesdat(FILE* archivo_metadata, int reg_d){
 // COMPACTACION    
 
 int primer_bloque_libre(){
-    for(int i=0, i<config.block_count, i++){
-        (bitarray_test_bit(bitmap_bloques, i)) : return i;
+    for(int i=0; i<config.block_count; i++){
+        if(bitarray_test_bit(bitmap_bloques, i)) return i;
     }
     return -1;
 }
 
 int primer_bloque_usado(){
-    for(int i=0, i<config.block_count, i++){
-        (!bitarray_test_bit(bitmap_bloques, i)) : return i;
+    for(int i=0; i<config.block_count; i++){
+        if(!bitarray_test_bit(bitmap_bloques, i)) return i;
     }
     return -1;
 }
 
 void compactar_bloques(uint32_t pid){
-    inicio_compactacion(logger, uint32_t pid); 
+    inicio_compactacion(logger, pid); 
 
-    int primer_bloque_libre = primer_bloque_libre();
-    int primer_bloque_usado = primer_bloque_usado();
+    int primerBloqueLibre = primer_bloque_libre();
+    int primerBloqueUsado = primer_bloque_usado();
     char* bloque_aux = (char*)malloc(config.block_size);
 
-    if(primer_bloque_libre == -1 || primer_bloque_usado == -1){
+    if(primerBloqueLibre == -1 || primerBloqueUsado == -1){
         log_error(logger, "No se que queres compactar, todos lo bloques estan ocupados.");
-        return EXIT_FAILURE;
+        return;
     }
 
-    while(primer_bloque_libre<config.block_count && primer_bloque_usado<config.block_count){
-        if(primer_bloque_libre < primer_bloque_usado){ 
-            fseek(bloques_dat, primer_bloque_usado*config.block_size, SEEK_SET);
+    while(primerBloqueLibre<config.block_count && primerBloqueUsado<config.block_count){
+        if(primerBloqueLibre < primerBloqueUsado){ 
+            fseek(bloques_dat, primerBloqueUsado*config.block_size, SEEK_SET);
             fread(bloque_aux, 1, config.block_size, bloques_dat);
 
-            fseek(bloques_dat, primer_bloque_libre*config.block_size, SEEK_SET);
+            fseek(bloques_dat, primerBloqueLibre*config.block_size, SEEK_SET);
             fwrite(bloque_aux, 1, config.block_size, bloques_dat);
 
-            bitarray_set_bit(bitmap_bloques, primer_bloque_libre);
-            bitarray_clean_bit(bitmap_bloques, primer_bloque_usado);
+            bitarray_set_bit(bitmap_bloques, primerBloqueLibre);
+            bitarray_clean_bit(bitmap_bloques, primerBloqueUsado);
             
             free(bloque_aux);
 
-            primer_bloque_libre = primer_bloque_libre();
-            primer_bloque_usado = primer_bloque_usado();
+            primerBloqueLibre = primer_bloque_libre();
+            primerBloqueUsado = primer_bloque_usado();
         }
         else{
-            primer_bloque_libre++;
-            primer_bloque_usado++;
+            primerBloqueLibre++;
+            primerBloqueUsado++;
         }
     }
     actualizar_bitmap_dat();
-    fin_compactacion(logger, uint32_t pid); 
+    fin_compactacion(logger, pid); 
 }
 
 bool check_size(uint32_t size, uint32_t pointer, FILE* archivo_metadata){
 
-    int32_t bloque_inicial;
+    uint32_t bloque_inicial;
     uint32_t tamanio_archivo;
-    fread(bloque_inicial, sizeof(int), 1, archivo_metadata);
-    fread(tamanio_archivo, sizeof(int), 1, archivo_metadata);
+    fread(&bloque_inicial, sizeof(uint32_t), 1, archivo_metadata);
+    fread(&tamanio_archivo, sizeof(uint32_t), 1, archivo_metadata);
 
-
-    
+    //TODO: VER QUÉ DEVOLVERRRR
+    return 0;
 }
-*/

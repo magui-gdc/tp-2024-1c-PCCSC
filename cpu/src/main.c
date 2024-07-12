@@ -68,8 +68,8 @@ int main(int argc, char* argv[]) {
 
     // NO hace falta un hilo para DISPATCH porque sólo KERNEL manda solicitudes a CPU, de forma SECUENCIAL (GRADO MULTIPROCESAMIENTO = 1)
     int cliente_kernel = esperar_cliente(socket_servidor_dispatch); 
-    while(1){
-        int cod_op = recibir_operacion(cliente_kernel);
+    int cod_op;
+    while((cod_op = recibir_operacion(cliente_kernel)) != -1){
         // DESDE ACA SE MANEJAN EJECUCIONES DE PROCESOS A DEMANDA DE KERNEL 
         switch (cod_op){
         case CONEXION:
@@ -104,6 +104,7 @@ int main(int argc, char* argv[]) {
     }
 
     //Limpieza
+    pthread_cancel(thread_interrupt);
     log_destroy(logger);
     list_destroy(tlb_list);
 	config_destroy(archivo_config);
@@ -351,12 +352,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                     free(peticion_completa);
                     buffer_destroy(buffer_rta_peticion_lectura);
                 break;
-                /* analizar si le puede mandar algún error
-                case ERROR_MEMORIA: 
-                    seguir_ejecucion = 0;
-                    desalojo = 1;
-                break;
-                */
             }
         } else if (strcmp(comando, "COPY_STRING") == 0){
             uint32_t tamanio_a_leer = atoi(tokens[1]);
@@ -559,8 +554,8 @@ void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, 
 void* recibir_interrupcion(void* conexion){
     int interrupcion_kernel, servidor_interrupt = *(int*) conexion;
     interrupcion_kernel = esperar_cliente(servidor_interrupt);
-    while(1){
-        int cod_op = recibir_operacion(interrupcion_kernel);
+    int cod_op;
+    while((cod_op = recibir_operacion(interrupcion_kernel)) != -1){
         switch (cod_op){
         case CONEXION:
             recibir_conexion(interrupcion_kernel);

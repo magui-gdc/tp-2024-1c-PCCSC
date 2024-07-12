@@ -55,7 +55,7 @@ bool leer_metadata(const char* nombre_archivo, archivo_metadata* metadata);
 bool escribir_metadata(const char* nombre_archivo, const archivo_metadata* metadata);
 char* obtener_path();
 void escribir_bloquesdat();
-void cargar_bloque(FILE* archivo_metadata, char* contenido);
+void cargar_bloque(FILE* archivo_metadata, uint32_t pointer, char* contenido);
 int contar_bloques_libres();
 int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada);
 
@@ -75,4 +75,4 @@ void compactar();
 
 /*          AUXILIARES            */
 void actualizar_bitmap_dat(); // ACTUALIZAR ARCHIVO DE BITMAP SEGUN BITMAP EN MEMORIA
-bool check_size(uint32_t size, uint32_t pointer); //el puntero al metadata, puntero al nt bloque inicial, int tam total 
+bool check_size(uint32_t size, uint32_t pointer, FILE* archivo); //el puntero al metadata, puntero al nt bloque inicial, int tam total 

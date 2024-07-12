@@ -53,7 +53,7 @@ int main(int argc, char *argv[])
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
-    t_config *archivo_config = iniciar_config("kernel.config");
+    t_config *archivo_config = iniciar_config("kernelPLANI.config");
     cargar_config_struct_KERNEL(archivo_config);
     algoritmo_planificacion = obtener_algoritmo_planificacion();
     logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_DEBUG);
