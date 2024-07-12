@@ -14,11 +14,12 @@ int main(int argc, char* argv[]) {
     strcpy(archivo_log, nombre);
     strcat(archivo_log, ".log");
     t_config* archivo_config = config_create(archivo_configuracion);
+    t_config* puertos_config = config_create("puertos.config");
     logger = log_create(archivo_log, "Interfaz I/O", 0, LOG_LEVEL_DEBUG);
     decir_hola("una Interfaz de Entrada/Salida");
     
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
-    t_io* interfaz_io = inicializar_io(nombre, archivo_config); //TODO: free(interfaz_io)
+    t_io* interfaz_io = inicializar_io(nombre, archivo_config, puertos_config); //TODO: free(interfaz_io)
     if(interfaz_io->clase == FS){
         path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
         //fs_create();
@@ -261,30 +262,30 @@ void responder_kernel(int socket){
 
 ////////////// CONFIGURACIÓN DEL CONFIG Y DERIVADOS ////////////////////////
 
-t_io* inicializar_io(char* nombre, t_config* archivo_config){
+t_io* inicializar_io(char* nombre, t_config* archivo_config, t_config* puertos_config){
     t_io* interfaz = malloc(sizeof(t_io)); //TODO: free(interfaz)
     interfaz->nombre_id = nombre;
     interfaz->archivo = archivo_config;
-    interfaz->clase = selector_carga_config(archivo_config);
+    interfaz->clase = selector_carga_config(archivo_config, puertos_config);
     
     return interfaz;
 }
 
-IO_class selector_carga_config (t_config* archivo_config){
+IO_class selector_carga_config (t_config* archivo_config, t_config* puertos_config){
 
     char* tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
     IO_class clase;
     if (strcmp(tipo_interfaz, "GENERICA") == 0) {
-        cargar_config_struct_IO_gen(archivo_config);
+        cargar_config_struct_IO_gen(archivo_config, puertos_config);
         clase = GEN;
     } else if (strcmp(tipo_interfaz, "STDIN") == 0) {
-        cargar_config_struct_IO_in(archivo_config);
+        cargar_config_struct_IO_in(archivo_config, puertos_config);
         clase = IN;
     } else if (strcmp(tipo_interfaz, "STDOUT") == 0) {
-        cargar_config_struct_IO_out(archivo_config);
+        cargar_config_struct_IO_out(archivo_config, puertos_config);
         clase = OUT;
     } else if (strcmp(tipo_interfaz, "DIALFS") == 0) {
-        cargar_config_struct_IO_fs(archivo_config);
+        cargar_config_struct_IO_fs(archivo_config, puertos_config);
         clase = FS;
     } else {
         log_error(logger, "interfaz no reconocida XD: %s", tipo_interfaz);
@@ -307,44 +308,45 @@ char* obtener_path(){
 
 ///////////////////////// GENÉRICA /////////////////////////
 
-void cargar_config_struct_IO_gen(t_config* archivo_config){
+void cargar_config_struct_IO_gen(t_config* archivo_config, t_config* puertos_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
     config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
-    config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
-    config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
+    config.ip_kernel = config_get_string_value(puertos_config, "IP_KERNEL");
+    config.puerto_kernel = config_get_string_value(puertos_config, "PUERTO_KERNEL");
 }
 
 ///////////////////////// STDIN    /////////////////////////
 
-void cargar_config_struct_IO_in(t_config* archivo_config){
+void cargar_config_struct_IO_in(t_config* archivo_config, t_config* puertos_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
-    config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
-    config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
-    config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
-    config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
+    config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
+    config.ip_kernel = config_get_string_value(puertos_config, "IP_KERNEL");
+    config.puerto_kernel = config_get_string_value(puertos_config, "PUERTO_KERNEL");
+    config.ip_memoria = config_get_string_value(puertos_config, "IP_MEMORIA");
+    config.puerto_memoria = config_get_string_value(puertos_config, "PUERTO_MEMORIA");
 }
 
 //////////////////////// STDOUT    /////////////////////////
 
-void cargar_config_struct_IO_out(t_config* archivo_config){
+void cargar_config_struct_IO_out(t_config* archivo_config, t_config* puertos_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
     config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
-    config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
-    config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
-    config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
-    config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
+    config.ip_kernel = config_get_string_value(puertos_config, "IP_KERNEL");
+    config.puerto_kernel = config_get_string_value(puertos_config, "PUERTO_KERNEL");
+    config.ip_memoria = config_get_string_value(puertos_config, "IP_MEMORIA");
+    config.puerto_memoria = config_get_string_value(puertos_config, "PUERTO_MEMORIA");
 }
 
 ///////////////////////// DIALFS   /////////////////////////
 
-void cargar_config_struct_IO_fs(t_config* archivo_config){
+void cargar_config_struct_IO_fs(t_config* archivo_config, t_config* puertos_config){
     config.tipo_interfaz = config_get_string_value(archivo_config, "TIPO_INTERFAZ");
     config.tiempo_unidad_trabajo = config_get_int_value(archivo_config, "TIEMPO_UNIDAD_TRABAJO");
-    config.ip_kernel = config_get_string_value(archivo_config, "IP_KERNEL");
-    config.puerto_kernel = config_get_string_value(archivo_config, "PUERTO_KERNEL");
-    config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
-    config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
-    config.path_base_dialfs = config_get_string_value(archivo_config, "PATH_BASE_DIALFS");
+    config.ip_kernel = config_get_string_value(puertos_config, "IP_KERNEL");
+    config.puerto_kernel = config_get_string_value(puertos_config, "PUERTO_KERNEL");
+    config.ip_memoria = config_get_string_value(puertos_config, "IP_MEMORIA");
+    config.puerto_memoria = config_get_string_value(puertos_config, "PUERTO_MEMORIA");
+    config.path_base_dialfs = config_get_string_value(puertos_config, "PATH_BASE_DIALFS");
     config.block_size = config_get_int_value(archivo_config, "BLOCK_SIZE");
     config.block_count = config_get_int_value(archivo_config, "BLOCK_COUNT");
     config.block_count = config_get_int_value(archivo_config, "RETRASO_COMPACTACION");

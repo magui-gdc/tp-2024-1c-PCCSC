@@ -20,13 +20,17 @@ uint32_t pid_proceso; // PID PROCESO EN EJECUCIÓN
 t_list* list_interrupciones;
 sem_t mutex_lista_interrupciones;
 
-int main(int argc, char* argv[]) {
-    
+int main(int argc, char **argv) {
+    if (argc < 3) {
+        fprintf(stderr, "NO hay suficientes parametros para %s\n", argv[0]);
+        return EXIT_FAILURE;
+    }
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
     pthread_t thread_interrupt; //, thread_dispatch;
-    t_config* archivo_config = iniciar_config("cpu.config");    
-    cargar_config_struct_CPU(archivo_config);
+    t_config *puertos_config = iniciar_config(argv[1]);
+    t_config *archivo_config = iniciar_config(argv[2]);    
+    cargar_config_struct_CPU(puertos_config, archivo_config);
     logger = log_create("cpu.log", "CPU", 1, LOG_LEVEL_DEBUG);
 
     tlb_list = list_create();
@@ -112,11 +116,11 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
-void cargar_config_struct_CPU(t_config* archivo_config){
-    config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
-    config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
-    config.puerto_escucha_dispatch = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_DISPATCH");
-    config.puerto_escucha_interrupt = config_get_string_value(archivo_config, "PUERTO_ESCUCHA_INTERRUPT");
+void cargar_config_struct_CPU(t_config* puertos_config, t_config* archivo_config){
+    config.ip_memoria = config_get_string_value(puertos_config, "IP_MEMORIA");
+    config.puerto_memoria = config_get_string_value(puertos_config, "PUERTO_MEMORIA");
+    config.puerto_escucha_dispatch = config_get_string_value(puertos_config, "PUERTO_ESCUCHA_DISPATCH");
+    config.puerto_escucha_interrupt = config_get_string_value(puertos_config, "PUERTO_ESCUCHA_INTERRUPT");
     config.cantidad_entradas_tlb = config_get_int_value(archivo_config, "CANTIDAD_ENTRADAS_TLB");
     config.algoritmo_tlb = config_get_string_value(archivo_config, "ALGORITMO_TLB");
 }

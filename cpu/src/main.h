@@ -29,7 +29,7 @@ typedef struct {
 extern config_struct config;
 extern t_list* tlb_list;
 
-void cargar_config_struct_CPU(t_config*);
+void cargar_config_struct_CPU(t_config*, t_config*);
 
 void inicializar_registros();
 

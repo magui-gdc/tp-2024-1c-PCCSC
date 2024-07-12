@@ -20,16 +20,16 @@ int BLOCK_SIZE;     // estos no se si dejarlos pq ya estan en el struct del conf
 int BLOCK_COUNT;    // estos no se si dejarlos pq ya estan en el struct del config
 int TAMANIO_ARCHIVO_BLOQUES; // = BLOCK_SIZE * BLOCK_COUNT
 
-void cargar_config_struct_IO_gen(t_config*);
-void cargar_config_struct_IO_in(t_config*);
-void cargar_config_struct_IO_out(t_config*);
-void cargar_config_struct_IO_fs(t_config*);
+void cargar_config_struct_IO_gen(t_config*,t_config*);
+void cargar_config_struct_IO_in(t_config*,t_config*);
+void cargar_config_struct_IO_out(t_config*,t_config*);
+void cargar_config_struct_IO_fs(t_config*,t_config*);
 
 void paquete(int);
 
-t_io* inicializar_io(char*, t_config*);
+t_io* inicializar_io(char*, t_config*,t_config*);
 
-IO_class selector_carga_config(t_config*);
+IO_class selector_carga_config(t_config*,t_config*);
 
 void responder_kernel(int socket_k);
 
