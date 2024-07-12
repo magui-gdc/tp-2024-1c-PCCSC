@@ -9,9 +9,9 @@ pthread_t thread_memoria;
 int main(int argc, char *argv[]){
 
     // ------ INICIALIZACIÓN VARIABLES GLOBALES ------ //
-    t_config *archivo_config = iniciar_config("memoriaPLANI.config");
+    t_config *archivo_config = iniciar_config("memoriaIO.config");
     cargar_config_struct_MEMORIA(archivo_config);
-    logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_DEBUG);
+    logger = log_create("memoria.log", "Servidor Memoria", 1, LOG_LEVEL_INFO);
     decir_hola("Memoria");
     sem_init(&mutex_espacio_usuario, 0, 1); 
     sem_init(&mutex_bitmap_marcos, 0, 1); 

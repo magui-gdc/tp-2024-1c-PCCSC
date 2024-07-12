@@ -1,6 +1,7 @@
 #include <utils/hello.h>
 #include <string.h>
 #include "filesystem.h"
+#include <sys/mman.h>  
 #include <math.h>
 #include "logs.h"
 
@@ -12,25 +13,65 @@ FILE *bitmap_dat;
 
 //     NACIMIENTO
 
-void create_bloques_dat()
-{
-    char *path = strcat(config.path_base_dialfs, "/bloque.dat");
-    bloques_dat = fopen(path, "wb"); // un issue recomendo abrirlo con wb
+void create_bloques_dat(){
+    char path[256];
+    strcpy(path, config.path_base_dialfs);
+    strcat(path, "/bloque.dat");
+    bloques_dat = fopen(path, "wb+"); // un issue recomendo abrirlo con wb+
 
-    if (bloques_dat == NULL)
-    {
+    if (bloques_dat == NULL){
         log_error(logger, "Error al inicializar bloques.dat");
         exit(EXIT_FAILURE);
     }
+
+    size_t tamanio_bitmap = config.block_count / 8; // SE TIENE QUE DIVIDIR POR 8 PORQUE EL BITARRAY TRABAJA CON BITS!!
+    if (config.block_count % 8 != 0) {
+        tamanio_bitmap++;  // se anañe un byte extra si hay bits adicionales parciales que no llegarían a completar el byte
+    }
+
+    if (ftruncate(fileno(bloques_dat), tamanio_bitmap + 1) == -1) {
+        log_error(logger, "Error al establecer el tamaño del archivo bitmap.dat");
+        fclose(bloques_dat);
+        exit(EXIT_FAILURE);
+    }
+
+    //  MMAP: función que mapea un archivo o dispositivo en memoria. Esto significa que el contenido del archivo puede ser accedido directamente desde la memoria, sin la necesidad de leer/escribir el archivo cada vez. 
+    // Se le pasa por parámetro la dirección donde se empezará a mapear la memoria (NULL permite al kernel elegir la dirección), la longitud del area a mapear, la proteccion de memoria, el comportamiento del mapeo, el descriptor de archivo del archivo a mapear y el offset en el archivo para empezar el mapeo. 
+    // Retorna  un puntero (void*) a la memoria mapeada si la operación es exitosa.
+    void* bitmapPointer = mmap(NULL, tamanio_bitmap, PROT_READ | PROT_WRITE, MAP_SHARED, fileno(bloques_dat), 0);
+    if (bitmapPointer == MAP_FAILED) {
+        log_error(logger, "Error al mapear el archivo bitmap.dat en memoria");
+        fclose(bloques_dat);
+        exit(EXIT_FAILURE);
+    }
+
+    memset(bitmapPointer, 0, tamanio_bitmap);
+
+    // creo bitarray 
+    bitmap_bloques = bitarray_create_with_mode(bitmapPointer, tamanio_bitmap, LSB_FIRST);
+    if (!bitmap_bloques) {
+        log_error(logger, "Error al asignar memoria para el objeto bitarray");
+        munmap(bitmapPointer, tamanio_bitmap);
+        fclose(bloques_dat);
+        exit(EXIT_FAILURE);
+    }
+
+    // MSYNC: función que asegura que las modificaciones realizadas en el mapeo de memoria se escriban de vuelta al archivo. Se le pasa como parámetro la dirección de la memoria mapeada, la longitud del área a sincronizar y flags..
+    if (msync(bitmapPointer, bitmap_bloques->size, MS_SYNC) == -1) {
+        log_error(logger, "Error en la sincronización con msync()");
+    }
+
+    fclose(bloques_dat);
 }
 
-void init_bitmap_bloques()
-{
-    size_t tamanio_bitmap = config.block_count;
+void init_bitmap_bloques(){
+    size_t tamanio_bitmap = config.block_count / 8; // SE TIENE QUE DIVIDIR POR 8 PORQUE EL BITARRAY TRABAJA CON BITS!!
+    if (config.block_count % 8 != 0) {
+        tamanio_bitmap++;  // se anañe un byte extra si hay bits adicionales parciales que no llegarían a completar el byte
+    }
 
     char *bitmap = malloc(tamanio_bitmap); // tamanio en bytes que se va a reservar
-    if (!bitmap)
-    {
+    if (!bitmap){
         log_error(logger, "Error en la creación del Bitmap de Bloques Libres");
         exit(EXIT_FAILURE);
     }
@@ -38,8 +79,7 @@ void init_bitmap_bloques()
     bitmap_bloques = bitarray_create_with_mode(bitmap, tamanio_bitmap, LSB_FIRST);
 
     // inicializa todos los bits a 0 (todos los bloques están libres)
-    for (size_t i = 0; i < config.block_count; i++)
-    {
+    for (size_t i = 0; i < config.block_count; i++){
         bitarray_clean_bit(bitmap_bloques, i);
     }
 
@@ -48,9 +88,8 @@ void init_bitmap_bloques()
 
 void fs_create()
 {
-
-    create_bloques_dat();
-    init_bitmap_bloques();
+    create_bloques_dat(); // este ya inicializa bitmap porque las estructuras están mapeadas = son lo mismo!
+    // init_bitmap_bloques();
 }
 
 // MUERTE
@@ -398,7 +437,7 @@ void cargar_bloque(FILE *archivo_metadata, uint32_t offset, char *contenido)
     // chequear que el bloque se haya cargado bien
     if (elementos_escritos < cantidad_bloques)
     {
-        log_error(logger, "Error al cargar bloque.")
+        log_error(logger, "Error al cargar bloque.");
             exit(EXIT_FAILURE);
     }
 }
@@ -469,8 +508,7 @@ void compactar_bloques(uint32_t pid)
 
 /*          AUXILIARES            */
 
-void actualizar_bitmap_dat()
-{
+void actualizar_bitmap_dat(){
     char path[512]; // Asumimos que 512 es suficiente, ajusta según necesites
     snprintf(path, sizeof(path), "%s/bitmap.dat", config.path_base_dialfs);
     bitmap_dat = fopen(path, "wb"); // un issue recomendo abrirlo con wb

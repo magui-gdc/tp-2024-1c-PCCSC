@@ -76,7 +76,7 @@ typedef struct {
 extern t_list* pcb_list;
 
 // --------- FUNCIONES DE CONFIGURACION --------- //
-void cargar_config_struct_KERNEL(t_config*);
+void cargar_config_struct_KERNEL(t_config*, t_config*);
 void inicializar_registros(t_pcb*);
 
 // --------- FUNCIONES PARA HILOS PRINCIPALES --------- //

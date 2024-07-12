@@ -47,16 +47,21 @@ sem_t mutex_planificacion_pausada[4], contador_grado_multiprogramacion, orden_pl
 t_list* interfaces_conectadas; // creo que conviene solo una lista de todas las interfaces para poder identificarlas más rápido en el sistema
 sem_t mutex_interfaces_conectadas; // mutex para la lista de interfaces_conectadas
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char **argv){
+    if (argc < 3) {
+        fprintf(stderr, "NO hay suficientes parametros para %s\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
     // ------------ DECLARACION HILOS HIJOS PRINCIPALES ------------ //
     pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
-    t_config *archivo_config = iniciar_config("kernelPLANI.config");
-    cargar_config_struct_KERNEL(archivo_config);
+    t_config *puertos_config = iniciar_config(argv[1]);
+    t_config *archivo_config = iniciar_config(argv[2]);
+    cargar_config_struct_KERNEL(puertos_config, archivo_config);
     algoritmo_planificacion = obtener_algoritmo_planificacion();
-    logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_DEBUG);
+    logger = log_create("log.log", "Servidor", 0, LOG_LEVEL_INFO);
 
     // -- INICIALIZACION VARIABLES GLOBALES -- //
     pid = 1;
@@ -168,18 +173,18 @@ int main(int argc, char *argv[])
 // --------------------------- DEFINICION FUNCIONES KERNEL -----------------------------
 
 // -------------------- INICIO FCS. DE CONFIGURACION --------------------
-void cargar_config_struct_KERNEL(t_config *archivo_config){
-    config.puerto_escucha = config_get_string_value(archivo_config, "PUERTO_ESCUCHA");
-    config.ip_memoria = config_get_string_value(archivo_config, "IP_MEMORIA");
-    config.puerto_memoria = config_get_string_value(archivo_config, "PUERTO_MEMORIA");
-    config.ip_cpu = config_get_string_value(archivo_config, "IP_CPU");
-    config.puerto_cpu_dispatch = config_get_string_value(archivo_config, "PUERTO_CPU_DISPATCH");
-    config.puerto_cpu_interrupt = config_get_string_value(archivo_config, "PUERTO_CPU_INTERRUPT");
+void cargar_config_struct_KERNEL(t_config* puertos_config, t_config *archivo_config){
+    config.puerto_escucha = config_get_string_value(puertos_config, "PUERTO_ESCUCHA");
+    config.ip_memoria = config_get_string_value(puertos_config, "IP_MEMORIA");
+    config.puerto_memoria = config_get_string_value(puertos_config, "PUERTO_MEMORIA");
+    config.ip_cpu = config_get_string_value(puertos_config, "IP_CPU");
+    config.puerto_cpu_dispatch = config_get_string_value(puertos_config, "PUERTO_CPU_DISPATCH");
+    config.puerto_cpu_interrupt = config_get_string_value(puertos_config, "PUERTO_CPU_INTERRUPT");
     config.algoritmo_planificacion = config_get_string_value(archivo_config, "ALGORITMO_PLANIFICACION");
     config.recursos = config_get_array_value(archivo_config, "RECURSOS");
     config.quantum = config_get_int_value(archivo_config, "QUANTUM");
-    config.path_scripts = config_get_string_value(archivo_config, "PATH_SCRIPTS");
-}
+    config.path_scripts = config_get_string_value(puertos_config, "PATH_SCRIPTS");
+} 
 // -------------------- FIN FCS. DE CONFIGURACION --------------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////

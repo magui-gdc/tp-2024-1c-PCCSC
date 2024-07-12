@@ -50,7 +50,7 @@ int main(int argc, char* argv[]) {
     TAM_MEMORIA = buffer_read_int(buffer_memoria);
     TAM_PAGINA  = buffer_read_int(buffer_memoria);
     buffer_destroy(buffer_memoria);
-    log_debug(logger, "obtengo valores de tam_memoria %d y de tam_pagina %d", TAM_MEMORIA, TAM_PAGINA);
+    //log_debug(logger, "obtengo valores de tam_memoria %d y de tam_pagina %d", TAM_MEMORIA, TAM_PAGINA);
 
     // ------------ CONEXION SERVIDOR - CLIENTES ------------
     // conexion dispatch
@@ -78,7 +78,6 @@ int main(int argc, char* argv[]) {
         case EJECUTAR_PROCESO:
             seguir_ejecucion = 1;
             desalojo = 0;
-            log_debug(logger, "RECIBISTE ALGO EN EJECUTAR_PROCESO");
             
             // guarda BUFFER del paquete enviado
             t_sbuffer *buffer_dispatch = cargar_buffer(cliente_kernel);
@@ -149,7 +148,6 @@ void ciclo_instruccion(int conexion_kernel){
     buffer_add_uint32(buffer, registros.PC);
     
     cargar_paquete(conexion_memoria, LEER_PROCESO, buffer); 
-    log_debug(logger, "envio orden lectura a memoria");
 
     if(recibir_operacion(conexion_memoria) == INSTRUCCION){
         t_sbuffer *buffer_de_instruccion = cargar_buffer(conexion_memoria);
@@ -209,15 +207,12 @@ t_list* filtrar_y_remover_lista(t_list* lista_original, bool(*condicion)(void*, 
 }
 
 void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
-    log_debug(logger, "chequeando interrupciones");
     sem_wait(&mutex_lista_interrupciones);
     if(!list_is_empty(list_interrupciones)){
         sem_post(&mutex_lista_interrupciones);
-        log_debug(logger, "hay interupciones");
         // remueve las interrupciones del proceso actual aun si el proceso ya fue desalojado => para que no se traten en la prox. ejecucion (si es que vuelve a ejecutar)
         t_list* interrupciones_proceso_actual = filtrar_y_remover_lista(list_interrupciones, coinciden_pid, proceso_pid);
         if(!list_is_empty(interrupciones_proceso_actual) && desalojo == 0){ // procesamos la interrupcion si todavia no se desalojo la ejecucion del proceso durante el proceso de EJECUCION
-            log_debug(logger, "hay interrupciones para el pid seleccionado");
             list_sort(interrupciones_proceso_actual, comparar_prioridad);
             // solo proceso la interrupcion de mas prioridad, que sera la primera!
             seguir_ejecucion = 0;
@@ -235,7 +230,6 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
 
 void ejecutar_instruccion(char* leido, int conexion_kernel) {
     // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
-    log_debug(logger, "CPU: LINEA DE INSTRUCCION %s", leido);
 
     char **tokens = string_split(leido, " ");
     char *comando = tokens[0];
@@ -340,12 +334,10 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
                         uint8_t valor_leido;
                         memcpy(&valor_leido, peticion_completa, bytes_a_leer);
                         snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
-                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
                     } else {
                         uint32_t valor_leido;
                         memcpy(&valor_leido, peticion_completa, bytes_a_leer);
                         snprintf(valor_leido_str, sizeof(valor_leido_str), "%u", valor_leido);
-                        log_debug(logger, "valor leido de memoria en uint: %u, en string %s", valor_leido, valor_leido_str);
                     }
 
                     set(registro_dato, valor_leido_str);
@@ -400,7 +392,6 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
             case DESALOJAR:
                 seguir_ejecucion = 0;
                 desalojo = 1; // EN TODAS LAS INT donde se DESALOJA EL PROCESO cargar 1 en esta variable!!
-                log_debug(logger, "desalojar proceso");
                 break;
             default:
                 // en caso de que la respuesta sea CONTINUAR, se continúa ejecutando normalmente
@@ -562,7 +553,6 @@ void* recibir_interrupcion(void* conexion){
             break;
         case INTERRUPCION:
             
-            log_debug(logger, "RECIBISTE ALGO EN INTERRUPCION");
             t_sbuffer *buffer_interrupt = cargar_buffer(interrupcion_kernel);
             
             // guarda datos del buffer (contexto de proceso)
@@ -612,6 +602,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
     t_tlb* entrada_tlb;
     uint32_t marco; 
 
+    log_debug(logger, "cantidad peticiones %d para dir.logica %u y bytes %u", cantidad_peticiones_memoria, direccion_logica, bytes_peticion);
     if(cantidad_peticiones_memoria == 1){
         // 1. Verifica si la página está en la TLB
         entrada_tlb = buscar_marco_tlb(pid_proceso, nro_pagina);
@@ -626,7 +617,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
             marco = entrada_tlb->marco;
             if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
                 entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
-                log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+                //log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
             }
         }
 
@@ -643,11 +634,12 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
         uint32_t bytes_pendientes = bytes_peticion;
         uint32_t bytes_a_enviar_por_peticion = 0;
         uint32_t bytes_enviados = 0;
+        int peticiones_memoria = cantidad_peticiones_memoria; 
         for (int i = 0; i < cantidad_peticiones_memoria; i++){
            if(i == 0) // en esta primera vuelta consumo el espacio restante a partir del offset de la primera página
                 bytes_a_enviar_por_peticion = TAM_PAGINA - desplazamiento; // los bytes que entran en la primera página a partir del offset dado
            else { // en las demás vueltas, consumo toda la página o lo que quede de los bytes pendientes ya que el offset es 0
-                if(i < --cantidad_peticiones_memoria)
+                if(i < (peticiones_memoria - 1))
                     bytes_a_enviar_por_peticion = TAM_PAGINA;
                 else 
                     bytes_a_enviar_por_peticion = bytes_pendientes;
@@ -666,7 +658,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
                 marco = entrada_tlb->marco;
                 if(strcmp(config.algoritmo_tlb, "LRU") == 0) {
                     entrada_tlb->timestamp = obtener_timestamp(); // si es LRU actualiza el timestamp con la última consulta
-                    log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
+                    //log_debug(logger, "se actualizo el timestamp de la entrada a la tlb");
                 }
             }
 
@@ -680,6 +672,7 @@ t_sbuffer* mmu(const char* operacion, uint32_t direccion_logica, uint32_t bytes_
                 free(datos_a_enviar); // para la próxima petición
             } else
                 buffer_add_uint32(buffer_direcciones_fisicas, bytes_a_enviar_por_peticion); // sólo su tamanio si es lectura
+
 
             bytes_pendientes-= bytes_a_enviar_por_peticion;
             bytes_enviados+=bytes_a_enviar_por_peticion;
@@ -731,7 +724,7 @@ void remover_entrada_segun_algoritmo(){
 
     t_tlb* entrada_eliminada = (t_tlb*)list_remove(tlb_list, index_mas_viejo);
     if (entrada_eliminada != NULL) {
-        log_debug(logger, "se elimina la entrada del proceso %u pagina %d", entrada_eliminada->pid, entrada_eliminada->pagina);
+        //log_debug(logger, "se elimina la entrada del proceso %u pagina %d", entrada_eliminada->pid, entrada_eliminada->pagina);
         free(entrada_eliminada);
     }
 }

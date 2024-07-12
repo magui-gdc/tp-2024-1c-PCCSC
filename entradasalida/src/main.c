@@ -371,13 +371,14 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
 
     int c;
     while ((c = getchar()) != '\n' && c != EOF);
-    printf("Ingresar texto para guardar en memoria:\n");
+    printf("PID: %u; Ingresar texto para guardar en memoria:\n", proceso);
 
     if (fgets(input, bytes_lectura, stdin) != NULL) {
         input[strcspn(input, "\n")] = '\0';
         printf("se ingreso: %s\n", input);
 
         int cantidad_peticiones_memoria = buffer_read_int(direcciones_memoria);
+        log_debug(logger, "proceso %u cantidad peticiones %d", proceso, cantidad_peticiones_memoria);
         uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
             sizeof(int) + // cantidad de peticiones
             sizeof(uint32_t) * cantidad_peticiones_memoria + // direccion/es fisica/s = nro_marco * tam_pagina + desplazamiento 
@@ -414,10 +415,12 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
 
 void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     uint32_t proceso = buffer_read_uint32(direcciones_memoria);
+    int cantidad_peticiones_mm = buffer_read_int(direcciones_memoria);
     log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
-    log_debug(logger, "bytes a leer desde consola %u", size);
+    log_debug(logger, "bytes a leer desde memoria %u peticiones %d", size, cantidad_peticiones_mm);
 
     direcciones_memoria->offset-=sizeof(uint32_t); // retrocedo offset para que envíe el PID del proceso a memoria
+    direcciones_memoria->offset-=sizeof(int);
     uint32_t nuevo_tamanio = direcciones_memoria->size - sizeof(uint32_t)*2; // le resto tamanio del size y del buffer mmu anterior que no se debe enviar a memoria
     t_sbuffer* buffer_memoria = buffer_create(nuevo_tamanio);
     buffer_read(direcciones_memoria, buffer_memoria->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
@@ -427,6 +430,8 @@ void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     if(recibir_operacion_memoria == PETICION_LECTURA){
         t_sbuffer* buffer_rta_peticion_lectura = cargar_buffer(socket);
         int cantidad_peticiones = buffer_read_int(buffer_rta_peticion_lectura);
+
+        log_debug(logger, "proceso %u cantidad peticiones %d", proceso, cantidad_peticiones);
 
         void* peticion_completa = malloc(size);
         uint32_t bytes_recibidos = 0;
@@ -442,7 +447,7 @@ void io_stdout_write(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
         memcpy(valor_leido, peticion_completa, size);
         valor_leido[size] = '\0';
 
-        printf("Dato leido desde memoria %s.\n", valor_leido);
+        printf("PID: %u; Dato leido desde memoria %s.\n", proceso, valor_leido);
 
         free(valor_leido);
         free(peticion_completa);
