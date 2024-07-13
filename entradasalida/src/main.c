@@ -21,7 +21,6 @@ int main(int argc, char* argv[]) {
      //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     t_io* interfaz_io = inicializar_io(nombre, archivo_config, puertos_config); //TODO: free(interfaz_io)
     if(interfaz_io->clase == FS){
-        path_bloques = strcat(config.path_base_dialfs, "/bloques.dat");
         fs_create();
     }
 
@@ -116,7 +115,7 @@ int main(int argc, char* argv[]) {
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
 
-                // io_fs_create(proceso, nombre_file);
+                io_fs_create(proceso, nombre_file);
 
                 responder_kernel(conexion_kernel);
             }
@@ -125,7 +124,7 @@ int main(int argc, char* argv[]) {
                 uint32_t length_file;
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
 
-                // io_fs_delete(proceso, nombre_file);
+                io_fs_delete(proceso, nombre_file);
 
                 responder_kernel(conexion_kernel);
                 
@@ -136,7 +135,7 @@ int main(int argc, char* argv[]) {
                 char* nombre_file = buffer_read_string(buffer_operacion, &length_file);
                 uint32_t tamanio_truncate = buffer_read_uint32(buffer_operacion);
 
-
+                io_fs_truncate(proceso, nombre_file, tamanio_truncate);
 
                 responder_kernel(conexion_kernel);
             }
@@ -160,7 +159,7 @@ int main(int argc, char* argv[]) {
 
                 cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_memoria);
                 
-                //io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria);
+                io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria);
                 
                 buffer_destroy(buffer_memoria);
 
@@ -178,9 +177,7 @@ int main(int argc, char* argv[]) {
 
                 log_debug(logger, "bytes a leer desde archivo %u", bytes_a_leer_desde_archivo);
 
-                char* dato_a_leer_desde_archivo = malloc(bytes_a_leer_desde_archivo + 1); // dato + /0
-
-                //io_fs_read(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria);
+                char* dato_a_leer_desde_archivo = io_fs_read(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria);
 
                 int cantidad_peticiones_memoria = buffer_read_int(buffer_operacion);
                 uint32_t tamanio_buffer_memoria = sizeof(uint32_t) + // pid proceso!
@@ -210,9 +207,8 @@ int main(int argc, char* argv[]) {
 
                 cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
                 recibir_operacion(conexion_memoria);
+                free(dato_enviar);
                 
-                // buffer_destroy(buffer_memoria); NO!! se hace al final por fuera del switch!!!
-
                 responder_kernel(conexion_kernel);
             }
             break;
@@ -408,6 +404,7 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
 
         cargar_paquete(socket, PETICION_ESCRITURA, buffer_memoria);
         recibir_operacion(socket);
+        free(dato_enviar);
     } else {
         printf("Error al leer la entrada.\n");
     }
