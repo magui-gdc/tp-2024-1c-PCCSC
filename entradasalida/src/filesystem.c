@@ -244,7 +244,8 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
                     config_save(archivo_metadata_config);
 
                     t_archivos_metadata* archivo_modificado = buscar_por_bloque_inicial(bloque_inicial);
-                    if(!archivo_modificado){
+                    archivo_modificado->bloque_inicial = pos_inicial_nueva;
+                    /*if(!archivo_modificado){
                         t_archivos_metadata* archivo_nuevo = malloc(sizeof(t_archivos_metadata));
                         archivo_nuevo->nombre_archivo_dialfs = malloc(strlen(nombre_archivo) + 1); // espacio para el '/0'
                         strcpy(archivo_nuevo->nombre_archivo_dialfs, nombre_archivo);
@@ -258,7 +259,7 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
                     config_destroy(archivo_metadata_config);
 
                     //compactar_bloques(pid);
-                    free(contenido);
+                    free(contenido);*/
                 
                 } else { //no hay suficientes bloques contiguos en bitmap
                     // rejuntar todos bloques sueltos y escribir ahi
@@ -293,7 +294,7 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
                     config_save(archivo_metadata_config);
 
                     t_archivos_metadata* archivo_modificado = buscar_por_bloque_inicial(bloque_inicial);
-                    if(!archivo_modificado){
+                    /*if(!archivo_modificado){
                         t_archivos_metadata* archivo_nuevo = malloc(sizeof(t_archivos_metadata));
                         archivo_nuevo->nombre_archivo_dialfs = malloc(strlen(nombre_archivo) + 1); // espacio para el '/0'
                         strcpy(archivo_nuevo->nombre_archivo_dialfs, nombre_archivo);
@@ -301,8 +302,8 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
 
                         list_add(lista_archivos_abierto, archivo_nuevo);
                     }
-                    else 
-                        archivo_modificado->bloque_inicial = pos_inicial_nueva;
+                    else*/ 
+                    archivo_modificado->bloque_inicial = pos_inicial_nueva;
 
                     config_destroy(archivo_metadata_config);
                     free(contenido);
