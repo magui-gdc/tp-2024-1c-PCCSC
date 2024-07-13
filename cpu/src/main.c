@@ -158,6 +158,7 @@ void ciclo_instruccion(int conexion_kernel){
         uint32_t length;
         char* leido = buffer_read_string(buffer_de_instruccion, &length);
         leido[strcspn(leido, "\n")] = '\0'; // CORREGIR: DEBE SER UN PROBLEMA DESDE EL ENVÍO DEL BUFFER!
+	log_info(logger, "PID: %u - Ejecutando %s", pid_proceso, leido);
 
         // ---------------------- ETAPA DECODE + EXECUTE  ---------------------- //
         // 2. DECODE: interpretar qué instrucción es la que se va a ejecutar y si la misma requiere de una traducción de dirección lógica a dirección física.
@@ -223,8 +224,8 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
             t_pic* primera_interrupcion = (t_pic*)list_get(interrupciones_proceso_actual, 0);
             t_sbuffer *buffer_desalojo_interrupt = NULL;
             desalojo_proceso(&buffer_desalojo_interrupt, conexion_kernel, primera_interrupcion->motivo_interrupcion);
-
-            log_debug(logger, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
+	    log_info(logger, "Desaloje el proceso %u, por INT %s", primera_interrupcion->pid, (primera_interrupcion->motivo_interrupcion == 12) ? "FIN QUANTUM" : "FINALIZAR PROCESO");
+            //log_debug(logger, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
         }
         list_clean_and_destroy_elements(interrupciones_proceso_actual, free); // Libera cada elemento en la lista filtrada
         list_destroy(interrupciones_proceso_actual);
