@@ -41,6 +41,7 @@ extern t_list* lista_archivos_abiertos;
 void create_bloques_dat();
 void init_bitmap_bloques(); //usar bitarray de las commons
 void init_metadata(); //usar commons como en los config, es un .txt
+void cargar_archivos_existentes();
 
 
 /*          MUERTE            */

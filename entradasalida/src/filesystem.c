@@ -97,28 +97,33 @@ void cargar_archivos_existentes(){
 
     if (directorio == NULL) {  // opendir devuelve NULL si no puede abrir el directorio
         printf("No se pudo abrir el directorio");
-        return 0;
+        exit(EXIT_FAILURE);
     }
 
     // Readdir devuelve un puntero a struct dirent
-    while ((p_directorio = readdir(directorio)) != NULL)
-        if (strcmp(p_directorio->d_name, ".") != 0 
-            && strcmp(p_directorio->d_name, "..") != 0 
-            && strcmp(p_directorio->d_name, "bloques.dat") != 0 
-            && strcmp(p_directorio->d_name, "bitmap.dat") != 0){
+    while ((p_directorio = readdir(directorio)) != NULL) {
+
+        log_debug(logger, "lei el archivo %s", p_directorio->d_name);
+        if (strcmp(p_directorio->d_name, ".") != 0 && strcmp(p_directorio->d_name, "..") != 0 && strcmp(p_directorio->d_name, "bloque.dat") != 0 && strcmp(p_directorio->d_name, "bitmap.dat") != 0){
             // guardar estrucutra del archivo en LISTA
             
             strcpy(path, config.path_base_dialfs);
+            strcat(path, "/");
             strcat(path, p_directorio->d_name);
 
-            int bloque_inicial = config_get_int_value(path, "BLOQUE_INICIAL");
-            t_archivos_metadata* struct_archivo;
-            struct_archivo->bloque_inicial = bloque_inicial;
-            struct_archivo->nombre_archivo_dialfs = p_directorio->d_name;
+            t_config* archivo_metadata_config = config_create((char*)path);
+            log_debug(logger, "el path es %s", path);
+            int bloque_inicial = config_get_int_value(archivo_metadata_config, "BLOQUE_INICIAL");
+            t_archivos_metadata* archivo_nuevo = malloc(sizeof(t_archivos_metadata));
+            archivo_nuevo->nombre_archivo_dialfs = malloc(strlen(p_directorio->d_name) + 1); // espacio para el '/0'
+            strcpy(archivo_nuevo->nombre_archivo_dialfs, p_directorio->d_name);
+            archivo_nuevo->bloque_inicial = bloque_inicial;
             
-            list_add(lista_archivos_abierto, struct_archivo);
-        }
+            list_add(lista_archivos_abierto, archivo_nuevo);
 
+            config_destroy(archivo_metadata_config);
+        }
+    }
     closedir(directorio);  
 }
 
@@ -146,9 +151,7 @@ int io_fs_create(uint32_t pid, char *nombre_archivo){
         if (archivo_metadata != NULL){
             log_debug(logger, "el archivo %s ya existia", nombre_archivo);
             fclose(archivo_metadata);
-        }
-        else {
-            fclose(archivo_metadata);
+        } else {
             archivo_metadata = fopen(path, "w"); // El archivo no existía => se crea!
             if (archivo_metadata == NULL){
                 log_error(logger, "Error al abrir/crear archivo metadata %s del proceso %u.",nombre_archivo, pid);

@@ -160,8 +160,6 @@ int main(int argc, char* argv[]) {
                 cargar_paquete(conexion_memoria, PETICION_LECTURA, buffer_memoria);
                 
                 io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria);
-                
-                buffer_destroy(buffer_memoria);
 
                 responder_kernel(conexion_kernel);
             }
