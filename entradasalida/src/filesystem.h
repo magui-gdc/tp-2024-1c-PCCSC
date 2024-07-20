@@ -5,6 +5,7 @@
 #include <commons/bitarray.h>
 #include <utils/buffer.h>
 #include <semaphore.h>
+#include <commons/temporal.h>
 
 typedef struct { 
     int BLOQUE_INICIAL;
@@ -65,6 +66,8 @@ void escribir_bloquesdat();
 void cargar_bloque(uint32_t pointer, char* contenido);
 int contar_bloques_libres();
 int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada);
+// espera a que finalice el tiempo de retardo configurado para compactacion y libera temporal
+void tiempo_espera_retardo(t_temporal* timer);
 
 void asignar_bloque(int bloque);
 void desasignar_bloque(int bloque);

@@ -18,7 +18,7 @@ int main(int argc, char* argv[]) {
     logger = log_create(archivo_log, "Interfaz I/O", 0, LOG_LEVEL_DEBUG);
     decir_hola("una Interfaz de Entrada/Salida");
     
-     //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
+    //----- RECIBO ARCHIVO CONFIG E INICIALIZO LA IO
     t_io* interfaz_io = inicializar_io(nombre, archivo_config, puertos_config); //TODO: free(interfaz_io)
     if(interfaz_io->clase == FS){
         fs_create();
@@ -148,9 +148,6 @@ int main(int argc, char* argv[]) {
                 buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
                 
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
-                log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
-
-                log_debug(logger, "bytes a leer desde memoria %u", bytes_a_leer_desde_memoria);
 
                 buffer_operacion->offset-=sizeof(uint32_t); // retrocedo offset para que envíe el PID del proceso a memoria
                 uint32_t nuevo_tamanio = buffer_operacion->size - sizeof(uint32_t)*2; // le resto tamanio del size y del buffer mmu anterior que no se debe enviar a memoria
@@ -171,9 +168,6 @@ int main(int argc, char* argv[]) {
                 buffer_read_uint32(buffer_operacion); // LEER EL TAMANIO DEL BUFFER POR COMO FUE CARGADO BUFFER MMU EN CPU
                 
                 uint32_t proceso = buffer_read_uint32(buffer_operacion);
-                log_info(logger, "PID: %u - Operacion: IO_STDOUT_WRITE", proceso);
-
-                log_debug(logger, "bytes a leer desde archivo %u", bytes_a_leer_desde_archivo);
 
                 char* dato_a_leer_desde_archivo = io_fs_read(proceso, nombre_file, bytes_a_leer_desde_archivo, offset_puntero_archivo, conexion_memoria);
 
@@ -372,6 +366,8 @@ void io_stdin_read(t_sbuffer* direcciones_memoria, uint32_t size, int socket){
     if (fgets(input, bytes_lectura, stdin) != NULL) {
         input[strcspn(input, "\n")] = '\0';
         printf("se ingreso: %s\n", input);
+
+        
 
         int cantidad_peticiones_memoria = buffer_read_int(direcciones_memoria);
         log_debug(logger, "proceso %u cantidad peticiones %d", proceso, cantidad_peticiones_memoria);

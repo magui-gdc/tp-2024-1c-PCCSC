@@ -312,7 +312,7 @@ void tiempo_espera_retardo(t_temporal* timer) {
     if (tiempo_transcurrido < config.retardo_respuesta) {
         usleep((config.retardo_respuesta - tiempo_transcurrido) * 1000); // usleep espera en microsegundos
     }
-
+ 
     temporal_destroy(timer);
 }
     
