@@ -17,20 +17,20 @@ void log_desalojo_fin_de_quantum(t_log* logger, uint32_t pid){
 
 void log_ingreso_ready(t_log* logger, t_mqueue* cola_ready){
     char* listado_pid = (char*)malloc(128);
+    listado_pid[0] = '\0';
     sem_wait(&(cola_ready->mutex));
     int max = queue_size(cola_ready->cola); 
-    char* pid_str = (char*)malloc(20);
     for(int i = 0; i<max; i++){   
         t_pcb* elemento = list_get(cola_ready->cola->elements, i);
+        char pid_str[20];
         sprintf(pid_str, "%d", elemento->pid);
         if(i != 0) strcat(listado_pid, ", ");
         strcat(listado_pid, pid_str);
     }
     sem_post(&(cola_ready->mutex));
     
-    log_info(logger, "Cola Ready %p: [%s]", (void*)cola_ready, listado_pid); // TODO: CORREGIR
+    log_info(logger, "Cola Ready: [%s]", listado_pid); 
     free(listado_pid);
-    free(pid_str);
 }
 
 void log_bloqueo_proceso(t_log* logger, uint32_t pid, char* motivo){

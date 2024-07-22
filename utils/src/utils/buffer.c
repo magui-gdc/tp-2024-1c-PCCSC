@@ -6,6 +6,7 @@ t_sbuffer *buffer_create(uint32_t size) {
     buffer->size = size;
     buffer->offset = 0;
     buffer->stream = malloc(size);
+    memset(buffer->stream, 0, size); // inicializa stream a cero
     return buffer;
 }
 
@@ -183,7 +184,7 @@ t_sbuffer* cargar_buffer(int socket) {
         free(buffer);
         return NULL;
     }
-
+    memset(buffer->stream, 0, buffer->size); // inicializa stream a cero
     recv(socket, buffer->stream, buffer->size, MSG_WAITALL);
 
     return buffer;

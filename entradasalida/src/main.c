@@ -117,6 +117,7 @@ int main(int argc, char* argv[]) {
 
                 io_fs_create(proceso, nombre_file);
 
+                free(nombre_file);
                 responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_DELETE){
@@ -126,6 +127,7 @@ int main(int argc, char* argv[]) {
 
                 io_fs_delete(proceso, nombre_file);
 
+                free(nombre_file);
                 responder_kernel(conexion_kernel);
                 
             }
@@ -137,6 +139,7 @@ int main(int argc, char* argv[]) {
 
                 io_fs_truncate(proceso, nombre_file, tamanio_truncate);
 
+                free(nombre_file);
                 responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_WRITE){
@@ -158,6 +161,7 @@ int main(int argc, char* argv[]) {
                 
                 io_fs_write(proceso, nombre_file, bytes_a_leer_desde_memoria, offset_puntero_archivo, conexion_memoria);
 
+                free(nombre_file);
                 responder_kernel(conexion_kernel);
             }
             if(op == IO_FS_READ){
@@ -200,6 +204,7 @@ int main(int argc, char* argv[]) {
                 cargar_paquete(conexion_memoria, PETICION_ESCRITURA, buffer_memoria);
                 recibir_operacion(conexion_memoria);
                 free(dato_enviar);
+                free(nombre_file);
                 
                 responder_kernel(conexion_kernel);
             }
@@ -284,6 +289,7 @@ IO_class selector_carga_config (t_config* archivo_config, t_config* puertos_conf
 
 char* obtener_path(){
     char* path = malloc(64);
+    path[0] = '\0';
     while (strlen(path) == 0) {
         printf("Introducir el nombre de la IO: ");
         scanf("%s", path);

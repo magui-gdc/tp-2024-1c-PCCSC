@@ -434,6 +434,7 @@ void scripts_kernel(char* ruta_archivo, void* archivo_config){
             free(instruccion);
             instruccion = NULL;
         }
+        if (instruccion) free(instruccion);  
         fclose(script);
     }
     free(path_script);
@@ -845,11 +846,9 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
     
     // 2. Identifico el tipo de interfaz que corresponde según la instrucción y tomo los datos del buffer
     char tipo_interfaz[11];
-    log_debug(logger, "offset actual %u", buffer_desalojo->offset);
     uint32_t length_io;
     char* interfaz_solicitada = buffer_read_string(buffer_desalojo, &length_io); // en todas las INST de IO llega primero el nombre de la interfaz
     interfaz_solicitada[strcspn(interfaz_solicitada, "\n")] = '\0';
-    log_debug(logger, "offset actual %u", buffer_desalojo->offset);
     t_sbuffer* buffer_instruccion_io; // aca voy cargando el buffer para enviar / reservar según si la interfaz esté disponible o no
 
     if(instruccion == IO_GEN_SLEEP){
@@ -865,7 +864,6 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         buffer_read_registros(buffer_desalojo, &(proceso_desalojado->registros)); // actualiza contexto
         uint32_t nuevo_tamanio = buffer_desalojo->size - length_io - sizeof(uint32_t) * 7 - sizeof(uint8_t) * 4 - sizeof(uint32_t);        
         buffer_instruccion_io = buffer_create(nuevo_tamanio);
-        log_debug(logger, "offset por ahora %u", buffer_desalojo->offset);
         buffer_read(buffer_desalojo, buffer_instruccion_io->stream, nuevo_tamanio); // el resto del buffer lo copia en el nuevo buffer  
         buffer_destroy(buffer_desalojo);
         /*
@@ -916,8 +914,6 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
     t_interfaz* interfaz = (t_interfaz*)list_find(interfaces_conectadas, buscar_por_nombre);
     sem_post(&mutex_interfaces_conectadas);
 
-    free(interfaz_solicitada);
-
     if(!interfaz) { // la interfaz no existe o no está conectada
         mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
         sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
@@ -933,6 +929,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             queue_push(interfaz->cola_bloqueados->cola, mqueue_pop(monitor_RUNNING)); 
             proceso_desalojado->cola_bloqueado = interfaz->cola_bloqueados;
             log_cambio_estado_proceso(logger, proceso_desalojado->pid, "EXEC", "BLOCKED");
+            log_bloqueo_proceso(logger,proceso_desalojado->pid, interfaz_solicitada);
             sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
             if(interfaz->disponibilidad == 0) { // interfaz disponible! => NO había otro proceso bloqueado para dicha interfaz
                 interfaz->pid_ejecutando = proceso_desalojado->pid;
@@ -959,6 +956,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             sem_post(&orden_proceso_exit);
         }
     }
+    free(interfaz_solicitada);
 }
 // ------------- FIN FUNCIONES PARA PLANI. CORTO PLAZO -------------
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1129,8 +1127,6 @@ void* atender_cliente(void* cliente){
             interfaz_conectada->disponibilidad = 0; 
             interfaz_conectada->pid_ejecutando = 0; // por ponerle un valor, en realidad no importa esto en esta instancia y no modifica el resto
 
-            free(nombre_interfaz);
-            free(tipo_interfaz);
 
             // 2. Agregar interfaz a la lista
             sem_wait(&mutex_interfaces_conectadas);
@@ -1139,6 +1135,8 @@ void* atender_cliente(void* cliente){
             interfaz = interfaz_conectada;
 
             log_info(logger, "Se conecta la interfaz %s al socket %d.", nombre_interfaz, cliente_recibido);
+            free(nombre_interfaz);
+            free(tipo_interfaz);
 
             buffer_destroy(buffer_conexion);
 			break;

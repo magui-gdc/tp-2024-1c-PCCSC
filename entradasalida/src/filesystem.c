@@ -283,7 +283,6 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
                 sprintf(tamanio_nuevo_str, "%u", nuevo_tamanio);
                 config_set_value(archivo_metadata_config, "TAMANIO_ARCHIVO", tamanio_nuevo_str);
                 config_save(archivo_metadata_config);
-                config_destroy(archivo_metadata_config);
             } else { // no hay bloques contiguos proximos después del archivo
                 pos_inicial_nueva = buscar_bloques_libres_contiguos(nueva_cant_bloques, -1);
                 if (pos_inicial_nueva != -3){ // encontraste suficientes bloques contiguos en bitmap
@@ -316,6 +315,7 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
 
                     t_archivos_metadata* archivo_modificado = buscar_por_bloque_inicial(bloque_inicial);
                     archivo_modificado->bloque_inicial = pos_inicial_nueva;
+                    free(contenido);
                     tiempo_espera_retardo(timer);
                     fin_compactacion(logger, pid);
                 } else { //no hay suficientes bloques contiguos en bitmap
@@ -353,7 +353,6 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
                     t_archivos_metadata* archivo_modificado = buscar_por_bloque_inicial(bloque_inicial);
                     archivo_modificado->bloque_inicial = pos_inicial_nueva;
 
-                    config_destroy(archivo_metadata_config);
                     free(contenido);
                 }
             }
@@ -370,9 +369,9 @@ void io_fs_truncate(uint32_t pid, char *nombre_archivo, uint32_t nuevo_tamanio){
         sprintf(tamanio_nuevo_str, "%u", nuevo_tamanio);
         config_set_value(archivo_metadata_config, "TAMANIO_ARCHIVO", tamanio_nuevo_str);
         config_save(archivo_metadata_config);
-        config_destroy(archivo_metadata_config);
     }
-    
+
+    config_destroy(archivo_metadata_config);
     log_truncar_archivo(logger, pid, nombre_archivo, nuevo_tamanio);
 }
 

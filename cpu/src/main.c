@@ -111,6 +111,7 @@ int main(int argc, char **argv) {
     log_destroy(logger);
     list_destroy(tlb_list);
 	config_destroy(archivo_config);
+    config_destroy(puertos_config);
     liberar_conexion(conexion_memoria);
 
     return 0;
@@ -224,7 +225,7 @@ void check_interrupt(uint32_t proceso_pid, int conexion_kernel){
             t_pic* primera_interrupcion = (t_pic*)list_get(interrupciones_proceso_actual, 0);
             t_sbuffer *buffer_desalojo_interrupt = NULL;
             desalojo_proceso(&buffer_desalojo_interrupt, conexion_kernel, primera_interrupcion->motivo_interrupcion);
-	    log_info(logger, "Desaloje el proceso %u, por INT %s", primera_interrupcion->pid, (primera_interrupcion->motivo_interrupcion == 12) ? "FIN QUANTUM" : "FINALIZAR PROCESO");
+	    log_info(logger, "Desaloje el proceso %u, por %s", primera_interrupcion->pid, (primera_interrupcion->motivo_interrupcion == 12) ? "FIN QUANTUM" : "FINALIZAR PROCESO");
             //log_debug(logger, "Desaloje el proceso %u, por INT %d", primera_interrupcion->pid, primera_interrupcion->motivo_interrupcion);
         }
         list_clean_and_destroy_elements(interrupciones_proceso_actual, free); // Libera cada elemento en la lista filtrada
@@ -535,7 +536,7 @@ void ejecutar_instruccion(char* leido, int conexion_kernel) {
 // solo carga el contexto y retorna proceso (si tuvo que cargar otro valor antes suponemos que ya venía cargado en el buffer que se pasa por parámetro)
 void desalojo_proceso(t_sbuffer **buffer_contexto_proceso, int conexion_kernel, op_code mensaje_desalojo){
     // O. Creo buffer si no vino cargado => si vino cargado, se supone que ya tiene el size que considera los registros que se cargan en esta función. Esto tiene lógica para cuando se necesite pasar otros valores en el buffer además del contexto de ejecución, como por ejemplo en la INST WAIT que se pasa el recurso que se quiere utilizar. 
-    if(!*buffer_contexto_proceso){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros 
+    if(*buffer_contexto_proceso == NULL){ // por defecto, si no vino nada cargado, siempre desalojo con contexto de ejecucion = registros 
         *buffer_contexto_proceso = buffer_create(
             sizeof(uint32_t) * 8 // REGISTROS: PC, EAX, EBX, ECX, EDX, SI, DI
             + sizeof(uint8_t) * 4 // REGISTROS: AX, BX, CX, DX
@@ -574,6 +575,7 @@ void* recibir_interrupcion(void* conexion){
                 sem_post(&mutex_lista_interrupciones);
                 log_debug(logger, "Recibi una interrupcion para el proceso %u, por %d", interrupcion_recibida->pid, interrupcion_recibida->motivo_interrupcion);
             }
+            buffer_destroy(buffer_interrupt);
             break;
         case -1:
             log_error(logger, "cliente desconectado");
