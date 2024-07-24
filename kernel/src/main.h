@@ -73,7 +73,7 @@ void inicializar_registros(t_pcb*);
 // --------- FUNCIONES PARA HILOS PRINCIPALES --------- //
 void* consola_kernel(void*);
 void* planificar_corto_plazo(void*);
-void* planificar_largo_plazo(void*);
+void planificar_largo_plazo(void*);
 void* planificar_new_to_ready(void*);
 void* planificar_all_to_exit(void*);
  
