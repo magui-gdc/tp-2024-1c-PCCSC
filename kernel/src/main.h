@@ -21,7 +21,6 @@ typedef enum{
     DESALOJADO_POR_IO, 
     PEDIDO_FINALIZACION
 } cod_desalojo; 
-// FINALIZAR_PROCESO ya está en op_code que es la estructura que se carga en el t_pic de cpu (para que CPU y KERNEL compartan mismos códigos de operación)
 
 typedef struct {
     char* nombre_interfaz;
@@ -43,7 +42,7 @@ typedef struct{
     char** recursos;
     int quantum;
     char* path_scripts;
-} config_struct; // CONFIGURACIONES ESTÁTICAS KERNEL
+} config_struct;
 
 typedef struct {
     uint32_t pid;
@@ -61,17 +60,9 @@ typedef struct {
     int* recursos; // array que guarda las instancias de los recursos del archivo config de kernel, por lo tanto, no hace falta guardar el nombre (el orden de cada elemento del array lo obtenemos a partir del orden del config), sino por (posición del array)=recurso la cantidad de instancias que está utilizando
     t_mqueue* cola_bloqueado; // guardas un puntero de la cola de bloqueados donde está el proceso en estado BLOCKED (recurso / io)
     t_spaquete* instruccion_io; // guarda ya cargado el paquete de la instrucción IO cuando el proceso se bloquea y espera 
+    uint8_t pedido_exit;
 } t_pcb; // PCB
 
-typedef struct {
-    char algoritmo[4];
-    t_pcb* proceso_running;
-} control_quantum_params;
-
-typedef struct {
-    uint8_t FLAG_FINALIZACION;
-    uint32_t PID;
-} prcs_fin;
 
 extern t_list* pcb_list;
 

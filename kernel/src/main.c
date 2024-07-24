@@ -271,6 +271,7 @@ void interpretar_comando_kernel(char* leido, void *archivo_config){
                             // para cualquier otro estado: se lo saca de su cola actual y se lo pasa a EXIT desde acá!
                             t_pcb* proceso_encontrado = extraer_proceso(proceso_buscado); // lo saco de su cola actual
                             mqueue_push(monitor_EXIT, proceso_encontrado); // lo agrego a EXIT
+                            proceso_encontrado->pedido_exit = 1;
                             log_finaliza_proceso(logger, proceso_encontrado->pid, "INTERRUPTED_BY_USER");
                             sem_post(&orden_proceso_exit);
                         }
@@ -288,13 +289,13 @@ void interpretar_comando_kernel(char* leido, void *archivo_config){
             char *valor = tokens[1];
             if (strlen(valor) != 0 && valor != NULL && atoi(valor) > 0){
                 if (atoi(valor) > config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION")){
-                    log_debug(logger, "multigramacion mayor");
+                    log_debug(logger, "multiprogramacion mayor");
                     int diferencia = atoi(valor) - config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION");
                     for (int i = 0; i < diferencia; i++)
                         sem_post(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
                 }
                 else if (atoi(valor) < config_get_int_value(archivo_config, "GRADO_MULTIPROGRAMACION")){
-                    log_debug(logger, "multigramacion menor");
+                    log_debug(logger, "multiprogramacion menor");
                     int diferencia = config_get_int_value((t_config *)archivo_config, "GRADO_MULTIPROGRAMACION") - atoi(valor);
                     for (int i = 0; i < diferencia; i++)
                         sem_wait(&contador_grado_multiprogramacion); // no hace falta otro semaforo para ejecutar esto porque estos se atienden de forma atomica.
@@ -330,7 +331,8 @@ void interpretar_comando_kernel(char* leido, void *archivo_config){
             // 3. Clasifico los procesos en las listas auxiliares según su estado
             for (int i = 0; i < list_size(pcb_list); i++) {
                 t_pcb *proceso_estado = list_get(pcb_list, i);
-                list_add(listas_por_estado[proceso_estado->estado], proceso_estado);
+                int estado_real = (proceso_estado->pedido_exit) ? 4 : proceso_estado->estado;
+                list_add(listas_por_estado[estado_real], proceso_estado);
             }
 
             // 4. Imprimo pid por estado en el orden de NEW a EXIT
@@ -471,6 +473,7 @@ void iniciar_proceso(char *path){
     }
     proceso->cola_bloqueado = NULL;
     proceso->instruccion_io = NULL;
+    proceso->pedido_exit = 0;
 
     mqueue_push(monitor_NEW, proceso);
 
@@ -670,6 +673,7 @@ void recibir_proceso_desalojado(){
             char motivo[25];
             strcpy(motivo, (mensaje_desalojo == EXIT_PROCESO) ? "SUCCESS" : ((mensaje_desalojo == OUT_OF_MEMORY) ? "OUT_OF_MEMORY" : "INTERRUPTED_BY_USER"));
             log_finaliza_proceso(logger, proceso_desalojado->pid, motivo);
+            proceso_desalojado->pedido_exit = 1;
             // el cambio de estado, la liberacion de memoria y el sem_post del grado de multiprogramación se encarga el módulo del plani largo plazo
             sem_post(&orden_proceso_exit);
         break;
@@ -703,6 +707,7 @@ void recibir_proceso_desalojado(){
                 mqueue_push(monitor_EXIT, mqueue_pop(monitor_RUNNING)); // mando a EXIT
                 sem_post(&mutex_planificacion_pausada[1]); // libera luego del cambio entre colas!
                 log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_RESOURCE");
+                proceso_desalojado->pedido_exit = 1;
                 sem_post(&orden_proceso_exit);
                 respuesta_cpu = DESALOJAR;
             } else {
@@ -920,6 +925,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
         buffer_destroy(buffer_instruccion_io); // al final NO se utiliza
         log_debug(logger, "estas en interfaz inexistente %u", proceso_desalojado->pid);
         log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
+        proceso_desalojado->pedido_exit = 1;
         sem_post(&orden_proceso_exit);
     } else {
         if (strcmp(interfaz->tipo_interfaz, tipo_interfaz) == 0){
@@ -953,6 +959,7 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
             buffer_destroy(buffer_instruccion_io); // al final NO se utiliza
             log_debug(logger, "lainterfaz no corresponde con su tipo %u", proceso_desalojado->pid);
             log_finaliza_proceso(logger, proceso_desalojado->pid, "INVALID_INTERFACE");
+            proceso_desalojado->pedido_exit = 1;
             sem_post(&orden_proceso_exit);
         }
     }
@@ -964,8 +971,10 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
 void *planificar_new_to_ready(void *archivo_config){
     while (1){
         sem_wait(&orden_planificacion_largo_plazo); // solo cuando hayan procesos en NEW
+        log_info(logger, "por tomar el wait de multiprogramacion");
         // 1. Tomo grado de multiprogramacion 
         sem_wait(&contador_grado_multiprogramacion);
+        log_info(logger, "tomaste el wait de multiprogramacion");
         sem_wait(&mutex_planificacion_pausada[0]);
 
         if(!mqueue_is_empty(monitor_NEW)){
@@ -996,6 +1005,10 @@ void *planificar_new_to_ready(void *archivo_config){
         }
         sem_post(&mutex_planificacion_pausada[0]); // libera planificacion luego de mover entre colas
     }
+}
+
+void proceso_to_exit(t_pcb* proceso_exit){
+
 }
 
 void *planificar_all_to_exit(void *args){
