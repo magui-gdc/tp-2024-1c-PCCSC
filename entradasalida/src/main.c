@@ -343,7 +343,7 @@ void cargar_config_struct_IO_fs(t_config* archivo_config, t_config* puertos_conf
     config.path_base_dialfs = config_get_string_value(puertos_config, "PATH_BASE_DIALFS");
     config.block_size = config_get_int_value(archivo_config, "BLOCK_SIZE");
     config.block_count = config_get_int_value(archivo_config, "BLOCK_COUNT");
-    config.block_count = config_get_int_value(archivo_config, "RETRASO_COMPACTACION");
+    config.retraso_compactacion = config_get_int_value(archivo_config, "RETRASO_COMPACTACION");
 }
 
 //-----------------FUNCIONES DE IO-----------------//

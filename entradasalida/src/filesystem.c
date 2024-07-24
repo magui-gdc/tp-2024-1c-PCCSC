@@ -471,7 +471,7 @@ int buscar_bloques_libres_contiguos(int cant_bloques, int pos_inicial_buscada){
             if (!bitarray_test_bit(bitmap_bloques, i)) { //0
                 bloques_encontrados++;
                 if (bloques_encontrados == cant_bloques) {
-                    log_debug(logger, "SE ENCONTRARON %d BLOQUES LIBRES A PARTIR DEL BLOQUE %d", cant_bloques, i );
+                    log_debug(logger, "SE ENCONTRARON %d BLOQUES LIBRES A PARTIR DEL BLOQUE %d", cant_bloques, i - cant_bloques + 1 );
                     return i - cant_bloques + 1; // retorna la posición inicial de los bloques libres contiguos
                 }
             } else { //1

@@ -971,10 +971,8 @@ void manejo_instruccion_io(int instruccion, t_sbuffer* buffer_desalojo, t_pcb* p
 void *planificar_new_to_ready(void *archivo_config){
     while (1){
         sem_wait(&orden_planificacion_largo_plazo); // solo cuando hayan procesos en NEW
-        log_info(logger, "por tomar el wait de multiprogramacion");
         // 1. Tomo grado de multiprogramacion 
         sem_wait(&contador_grado_multiprogramacion);
-        log_info(logger, "tomaste el wait de multiprogramacion");
         sem_wait(&mutex_planificacion_pausada[0]);
 
         if(!mqueue_is_empty(monitor_NEW)){
