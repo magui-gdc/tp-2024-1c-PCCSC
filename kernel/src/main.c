@@ -54,7 +54,7 @@ int main(int argc, char **argv){
     }
 
     // ------------ DECLARACION HILOS HIJOS PRINCIPALES ------------ //
-    pthread_t thread_kernel_servidor, thread_kernel_consola, thread_planificador_corto_plazo, thread_planificador_largo_plazo;
+    pthread_t thread_kernel_consola, thread_planificador_corto_plazo;
 
     // ------------ ARCHIVOS CONFIGURACION + LOGGER ------------
     t_config *puertos_config = iniciar_config(argv[1]);
@@ -114,32 +114,25 @@ int main(int argc, char **argv){
     log_info(logger, "Server KERNEL iniciado");
 
     // ------------ HILOS ------------
-    // hilo con MULTIPLEXACION a Interfaces I/O
-    if (pthread_create(&thread_kernel_servidor, NULL, servidor_escucha, &socket_servidor) != 0){
-        log_error(logger, "No se ha podido crear el hilo para la conexion con interfaces I/O");
-        exit(EXIT_FAILURE);
-    }
     // hilo para recibir mensajes por consola
     if (pthread_create(&thread_kernel_consola, NULL, consola_kernel, archivo_config) != 0){
         log_error(logger, "No se ha podido crear el hilo para la consola kernel");
         exit(EXIT_FAILURE);
-    }
+    } else pthread_detach(thread_kernel_consola);
+
     // hilo para planificacion a corto plazo (READY A EXEC)
     if (pthread_create(&thread_planificador_corto_plazo, NULL, planificar_corto_plazo, archivo_config) != 0){
         log_error(logger, "No se ha podido crear el hilo para el planificador corto plazo");
         exit(EXIT_FAILURE);
-    }
-    // hilo para planificacion a largo plazo (NEW A READY)
-    if (pthread_create(&thread_planificador_largo_plazo, NULL, planificar_largo_plazo, archivo_config) != 0){
-        log_error(logger, "No se ha podido crear el hilo para el planificador largo plazo");
-        exit(EXIT_FAILURE);
-    }
+    } else  pthread_detach(thread_planificador_corto_plazo);
 
-    pthread_join(thread_kernel_servidor, NULL);
-    pthread_join(thread_kernel_consola, NULL);
-    pthread_join(thread_planificador_corto_plazo, NULL);
-    pthread_join(thread_planificador_largo_plazo, NULL);
+    // crea hilos para planificacion a largo plazo (NEW A READY)
+    planificar_largo_plazo(archivo_config);
 
+    // servidor MULTIPLEXACION paraa Interfaces I/O
+    servidor_escucha(&socket_servidor); // se queda siempre a la espera de recibir un cliente
+
+    // liberar recursos
     destruir_monitores();
     // destruyo monitores para recursos bloqueados
     for (int i = 0; i < cantidad_recursos; i++) {
@@ -401,7 +394,7 @@ void *planificar_corto_plazo(void *archivo_config){
 }
 
 // definicion funcion hilo largo plazo
-void *planificar_largo_plazo(void *archivo_config){
+void planificar_largo_plazo(void *archivo_config){
     pthread_t thread_NEW_READY, thread_ALL_EXIT;
 
     pthread_create(&thread_NEW_READY, NULL, planificar_new_to_ready, archivo_config);
@@ -409,7 +402,6 @@ void *planificar_largo_plazo(void *archivo_config){
 
     pthread_detach(thread_NEW_READY);
     pthread_detach(thread_NEW_READY);
-    return NULL;
 }
 
 // -------------------- FIN FCS. DE HILOS KERNEL --------------------
