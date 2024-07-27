@@ -230,7 +230,7 @@ void io_fs_delete(uint32_t pid, char *nombre_archivo){
     int bloque_inicial = config_get_int_value(archivo_metadata_config, "BLOQUE_INICIAL");
     int tamanio_archivo = config_get_int_value(archivo_metadata_config, "TAMANIO_ARCHIVO");
 
-    double division = (double)tamanio_archivo / config.block_size;
+    double division = (tamanio_archivo == 0) ? 1 : (double)tamanio_archivo / config.block_size;
     bloque_final = bloque_inicial + ceil(division);
     for (int i = bloque_inicial; i < bloque_final; i++){
         desasignar_bloque(i); // hace el clean_bit y actualiza en bitmap.dat
