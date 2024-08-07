@@ -1,6 +1,6 @@
 # Papas de Chedaaaar
 
-Hola, somos el grupo Papas Carrefour Classic Sabor Cheddar, y si te lo estás preguntando, sí, nos descansaron un rato cuando fuimos a dar el coloquio por nuestro nombre.
+Hola, somos el grupo Papas Carrefour Classic Sabor Cheddar, y si te lo estás preguntando, sí, nuestro nombre fue objeto de burla durante la presentación y coloquio del trabajo práctico.
 
 [Consigna C-Comenta](https://github.com/magui-gdc/tp-2024-1c-PCCSC/blob/main/CONSIGNA%20C%20-%20Comenta-%20v1.3.pdf)
 
