@@ -1,6 +1,7 @@
 # Papas de Chedaaaar
 
 Hola, somos el grupo Papas Carrefour Classic Sabor Cheddar, y si te lo estás preguntando, sí, nos descansaron un rato cuando fuimos a dar el coloquio por nuestro nombre.
-
-![7791720018408_E01 ](https://github.com/user-attachments/assets/668593af-4d9e-4111-b350-b5c3ee2b4e56)
+<p align="center">
+<a href="url"><img src="https://github.com/user-attachments/assets/dff8c599-d135-4e0f-aca7-65a21fe29556" alt="Papas Carrefour Classic Sabor Cheddar" align="center" height=25% width=25% ></a>
+</p>
 
