@@ -1,7 +1,0 @@
-FUNCIONES DE CREACION DE PROCESOS
-
-- iniciar_proceso           OK
-- eliminar_proceso          
-- iniciar_planificacion
-- detener_planificacion
-- estados_procesos
